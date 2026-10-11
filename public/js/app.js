@@ -1461,21 +1461,42 @@ async function initPush() {
 }
 
 // Obtiene el token FCM de este dispositivo y lo guarda para que el backend
-// pueda enviarle push. Devuelve true si quedó registrado.
+// pueda enviarle push. Devuelve {ok:true} o {ok:false, reason, error}.
 async function registerPushToken() {
   if (!vapidKey || vapidKey === 'TODO') {
     console.warn('Falta la clave VAPID: genera una en Firebase console (ver README, paso 5).');
-    return false;
+    return { ok: false, reason: 'no-vapid' };
+  }
+  // Registra el SW de forma explícita para obtener errores claros.
+  let registration;
+  try {
+    registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+      scope: '/firebase-cloud-messaging-push-scope',
+    });
+  } catch (e) {
+    console.warn('No se pudo registrar el service worker:', e);
+    return { ok: false, reason: 'sw-failed', error: e };
   }
   const messaging = getMessaging(app);
-  const token = await getToken(messaging, { vapidKey });
-  if (!token) return false;
-  await setDoc(doc(db, 'users', state.user.uid, 'pushTokens', token), {
-    token, platform: 'web', createdAt: serverTimestamp(),
-  });
+  let token;
+  try {
+    token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: registration });
+  } catch (e) {
+    console.warn('No se pudo obtener el token push:', e);
+    return { ok: false, reason: 'token-failed', error: e };
+  }
+  if (!token) return { ok: false, reason: 'no-token' };
+  try {
+    await setDoc(doc(db, 'users', state.user.uid, 'pushTokens', token), {
+      token, platform: 'web', createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.warn('No se pudo guardar el token push:', e);
+    return { ok: false, reason: 'save-failed', error: e };
+  }
   state.pushToken = token;
   try { localStorage.setItem('gleraPushToken', token); } catch (e) {}
-  return true;
+  return { ok: true };
 }
 
 // Elimina el token de este dispositivo (deja de recibir push aquí).
@@ -1513,8 +1534,19 @@ ACTIONS['toggle-push'] = async () => {
       if (!await isSupported()) { toast('Tu navegador no admite notificaciones push.'); return; }
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
-        const ok = await registerPushToken();
-        toast(ok ? 'Notificaciones push activadas.' : 'No se pudo activar el push en este dispositivo.');
+        const res = await registerPushToken();
+        if (res.ok) {
+          toast('Notificaciones push activadas.');
+        } else {
+          const msg = {
+            'no-vapid': 'Falta configurar la clave VAPID.',
+            'sw-failed': 'No se pudo registrar el service worker.',
+            'token-failed': 'No se pudo obtener el token push.',
+            'no-token': 'No se obtuvo token push.',
+            'save-failed': 'No se pudo guardar el token.',
+          }[res.reason] || 'No se pudo activar el push en este dispositivo.';
+          toast(msg);
+        }
       } else {
         toast('Permiso no concedido.');
       }
