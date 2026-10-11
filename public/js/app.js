@@ -30,6 +30,7 @@ const state = {
   evalItems: [],    // ítems de evaluación configurables (colección evalItems)
   reportFilter: 'all', // filtro de informes en vista familia: all | diario | mensual
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
+  editingNoticeId: null, // aviso en edición (null = crear nuevo)
   unsubChat: null,
   unsubNotif: null,
 };
@@ -53,6 +54,8 @@ const NAV_ICONS = {
   auths: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18H6zM9 7h6M9 11h6"/><path d="m9 16 2 2 4-4"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
   notifications: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+  notices: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+  child: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0M18 4h3v3"/></svg>',
   profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
 };
 
@@ -64,7 +67,7 @@ const TITLES = {
   auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
   noticeCompose: 'Nuevo aviso', calendar: 'Calendario', notifications: 'Notificaciones',
   profile: 'Mi perfil', more: 'Más', users: 'Usuarios',
-  evalItems: 'Ítems de evaluación',
+  evalItems: 'Ítems de evaluación', child: 'Mi hijo', notices: 'Avisos',
 };
 
 /* ---------------- Utilidades ---------------- */
@@ -186,7 +189,7 @@ ACTIONS.go = (d) => show(d.screen);
 const SCREENS = ['home', 'attendance', 'evaluate', 'progress', 'reports',
   'reportDetail', 'reportCompose', 'chatList', 'chatView', 'auths', 'authDetail',
   'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more', 'users',
-  'evalItems'];
+  'evalItems', 'child', 'notices'];
 const RENDER = {};
 
 function show(id) {
@@ -207,23 +210,43 @@ function setLoggedOut(out) {
 
 /* ---------------- Navegación (según rol) ---------------- */
 function renderNav() {
-  const items = [
-    { id: 'home', label: 'Inicio', icon: 'home' },
-    { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
-    isMonitor()
-      ? { id: 'evaluate', label: 'Evaluar', icon: 'evaluate' }
-      : { id: 'progress', label: 'Progreso', icon: 'progress' },
-    ...(isAdmin() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
-    { id: 'chatList', label: 'Chat', icon: 'chat' },
-    { id: 'more', label: 'Más', icon: 'more' },
-  ];
+  // Elementos según rol. La familia usa el menú del prototipo.
+  let items, bottomItems;
+  if (isMonitor()) {
+    items = [
+      { id: 'home', label: 'Inicio', icon: 'home' },
+      { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
+      { id: 'evaluate', label: 'Evaluar', icon: 'evaluate' },
+      ...(isAdmin() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
+      { id: 'chatList', label: 'Chat', icon: 'chat' },
+      { id: 'more', label: 'Más', icon: 'more' },
+    ];
+    bottomItems = items;
+  } else {
+    items = [
+      { id: 'home', label: 'Inicio', icon: 'home' },
+      { id: 'child', label: 'Mi hijo', icon: 'child' },
+      { id: 'reports', label: 'Informes', icon: 'reports' },
+      { id: 'notices', label: 'Avisos', icon: 'notices' },
+      { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
+      { id: 'chatList', label: 'Chat', icon: 'chat' },
+      { id: 'more', label: 'Más', icon: 'more' },
+    ];
+    bottomItems = [
+      { id: 'home', label: 'Inicio', icon: 'home' },
+      { id: 'child', label: 'Mi hijo', icon: 'child' },
+      { id: 'notices', label: 'Avisos', icon: 'notices' },
+      { id: 'chatList', label: 'Chat', icon: 'chat' },
+      { id: 'more', label: 'Más', icon: 'more' },
+    ];
+  }
   // Barra inferior (móvil).
   const bottom = $('bottomnav');
-  bottom.innerHTML = items.map(i =>
+  bottom.innerHTML = bottomItems.map(i =>
     `<button class="bottom-btn" data-action="go" data-screen="${i.id}">
        <span class="ico">${NAV_ICONS[i.icon]}</span><span>${i.label}</span>
      </button>`).join('');
-  bottom.style.gridTemplateColumns = `repeat(${items.length},1fr)`;
+  bottom.style.gridTemplateColumns = `repeat(${bottomItems.length},1fr)`;
   // Barra lateral (escritorio).
   $('desktopNav').innerHTML = items.map(i =>
     `<button class="nav-btn" data-action="go" data-screen="${i.id}">
@@ -314,10 +337,35 @@ async function loadRoster() {
 }
 
 /* ---------------- Inicio: dashboard ---------------- */
-ACTIONS['scroll-tablon'] = () => {
-  const t = $('tablon');
-  if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
-};
+
+/* ---------------- Tablón de anuncios ---------------- */
+// Tarjeta de aviso; los monitores ven Editar y Eliminar.
+const noticeCard = (n) => `
+  <div class="card">
+    ${n.pinned ? '<span class="pinned-tag">📌 Fijado</span>' : ''}
+    <h3>${esc(n.title)}</h3>
+    <p>${esc(n.body)}</p>
+    <div class="meta">${tsToDate(n.createdAt)}</div>
+    ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
+      <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
+      <button class="text-btn" data-action="delete-notice" data-id="${n.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+    </div>` : ''}
+  </div>`;
+
+// Pantalla "Avisos": el tablón completo.
+async function renderNotices() {
+  const c = $('notices-content');
+  const snap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
+  const notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  notices.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  c.innerHTML = `
+    <div class="screen-head"><h2>Tablón de anuncios</h2>
+      ${isMonitor() ? `<button class="btn small" data-action="new-notice">+ Publicar</button>` : ''}
+    </div>
+    <div class="grid"><div class="col-12">
+      ${notices.length ? notices.map(noticeCard).join('') : emptyBox('📋', 'Aún no hay avisos en el tablón.')}
+    </div></div>`;
+}
 
 async function renderHome() {
   const c = $('home-content');
@@ -421,19 +469,9 @@ async function renderHome() {
       <div class="col-12"><div class="card"><div class="filters" style="margin:0">
         <button class="btn" data-action="go" data-screen="attendance">Pasar lista</button>
         <button class="btn secondary" data-action="go" data-screen="evaluate">Evaluar sesión</button>
-        <button class="btn secondary" data-action="go" data-screen="noticeCompose">Nuevo aviso</button>
+        <button class="btn secondary" data-action="new-notice">Nuevo aviso</button>
       </div></div></div>`;
   }
-
-  // Lista completa del tablón.
-  const noticeList = notices.length ? notices.map(n => `
-      <div class="card">
-        ${n.pinned ? '<span class="pinned-tag">📌 Fijado</span>' : ''}
-        <h3>${esc(n.title)}</h3>
-        <p>${esc(n.body)}</p>
-        <div class="meta">${tsToDate(n.createdAt)}</div>
-      </div>`).join('')
-    : emptyBox('📋', 'Aún no hay avisos en el tablón.');
 
   c.innerHTML = `
     <div class="greeting">
@@ -443,7 +481,7 @@ async function renderHome() {
     <div class="grid">
       <div class="col-8">
         ${latest ? `
-        <article class="card notice-feature clickable" data-action="scroll-tablon">
+        <article class="card notice-feature clickable" data-action="go" data-screen="notices">
           <span class="badge">${latest.pinned ? 'Fijado · ' : ''}Último aviso</span>
           <h3>${esc(latest.title)}</h3>
           <p>${esc(latest.body)}</p>
@@ -461,34 +499,58 @@ async function renderHome() {
       </div></div>
       ${metrics}
       ${extraCard}
-      <div class="col-12" id="tablon"><div class="section-head"><h3>Tablón de anuncios</h3>
-        ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="noticeCompose">+ Publicar</button>` : ''}
+      <div class="col-12"><div class="section-head"><h3>Tablón de anuncios</h3>
+        <button class="text-btn" data-action="go" data-screen="notices">Ver tablón →</button>
       </div></div>
-      <div class="col-12">${noticeList}</div>
     </div>`;
 }
 
 async function renderNoticeCompose() {
+  const editing = state.editingNoticeId ? (await getDoc(doc(db, 'notices', state.editingNoticeId))).data() : null;
   $('notice-compose-content').innerHTML = `
-    <button class="back" data-action="go" data-screen="home">‹ Volver</button>
-    <h2>Nuevo aviso</h2>
+    <button class="back" data-action="go" data-screen="notices">‹ Avisos</button>
+    <h2>${editing ? 'Editar aviso' : 'Nuevo aviso'}</h2>
     <label for="nc-title">Título</label>
-    <input type="text" id="nc-title" maxlength="120" placeholder="Ej.: Cambio de horario del miércoles">
+    <input type="text" id="nc-title" maxlength="120" placeholder="Ej.: Cambio de horario del miércoles" value="${esc(editing?.title || '')}">
     <label for="nc-body">Texto</label>
-    <textarea id="nc-body" placeholder="Escribe el aviso para las familias…"></textarea>
-    <label><input type="checkbox" id="nc-pinned"> Fijar en el tablón</label>
-    <button class="btn block" data-action="publish-notice">Publicar aviso</button>`;
+    <textarea id="nc-body" placeholder="Escribe el aviso para las familias…">${esc(editing?.body || '')}</textarea>
+    <label><input type="checkbox" id="nc-pinned" ${editing?.pinned ? 'checked' : ''}> Fijar en el tablón</label>
+    <button class="btn block" data-action="publish-notice">${editing ? 'Guardar cambios' : 'Publicar aviso'}</button>`;
 }
+ACTIONS['new-notice'] = () => {
+  state.editingNoticeId = null;
+  show('noticeCompose');
+};
+ACTIONS['edit-notice'] = (d) => {
+  state.editingNoticeId = d.id;
+  show('noticeCompose');
+};
+ACTIONS['delete-notice'] = async (d) => {
+  if (!confirm('¿Eliminar este aviso del tablón?')) return;
+  await deleteDoc(doc(db, 'notices', d.id));
+  toast('Aviso eliminado.');
+  const active = document.querySelector('.screen.active');
+  show(active ? active.id.replace('screen-', '') : 'notices');
+};
 ACTIONS['publish-notice'] = async () => {
   const title = $('nc-title').value.trim();
   const body = $('nc-body').value.trim();
   if (!title || !body) { toast('Escribe un título y un texto.'); return; }
-  await addDoc(collection(db, 'notices'), {
+  const data = {
     title, body, pinned: $('nc-pinned').checked,
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
-  });
-  toast('Aviso publicado en el tablón.');
-  show('home');
+  };
+  if (state.editingNoticeId) {
+    await updateDoc(doc(db, 'notices', state.editingNoticeId), {
+      title, body, pinned: $('nc-pinned').checked,
+    });
+    state.editingNoticeId = null;
+    toast('Aviso actualizado.');
+  } else {
+    await addDoc(collection(db, 'notices'), data);
+    toast('Aviso publicado en el tablón.');
+  }
+  show('notices');
 };
 
 /* ---------------- Asistencia ---------------- */
@@ -622,6 +684,69 @@ ACTIONS['save-evaluation'] = async () => {
   }, { merge: true });
   toast('Evaluación guardada.');
 };
+
+/* ---------------- Mi hijo (familia) ---------------- */
+async function renderChild() {
+  const c = $('child-content');
+  if (isMonitor()) { show('home'); return; }
+  if (!state.children.length) {
+    c.innerHTML = `<h2>Mi hijo/a</h2>` + emptyBox('👧', 'Aún no hay alumnos vinculados a tu familia.');
+    return;
+  }
+  const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
+  const firstMonth = todayStr().slice(0, 7) + '-01';
+  const mesNombre = MESES_LARGO[new Date().getMonth()];
+  const [asnap, evsnap] = await Promise.all([
+    getDocs(query(collection(db, 'attendance'),
+      where('studentId', '==', child.id), orderBy('date', 'desc'), limit(60))),
+    getDocs(query(collection(db, 'evaluations'),
+      where('studentId', '==', child.id), orderBy('date', 'desc'), limit(1))),
+  ]);
+  const monthDocs = asnap.docs.map(d => d.data()).filter(a => a.date >= firstMonth);
+  const present = monthDocs.filter(a => a.status === 'presente').length;
+  const pct = monthDocs.length ? Math.round(present / monthDocs.length * 100) : null;
+  const lastEval = evsnap.empty ? null : evsnap.docs[0].data();
+  const scores = lastEval ? evalScores(lastEval) : [];
+  c.innerHTML = `
+    <div class="card child-hero">
+      <div class="child-avatar">${initialsOf(child.firstName + ' ' + (child.lastName || ''))}</div>
+      <div>
+        ${child.group ? `<span class="tag">${esc(child.group)}</span>` : ''}
+        <h2>${esc(child.firstName)} ${esc(child.lastName || '')}</h2>
+        <p class="muted" style="margin:4px 0 0">Estudio Dirigido · Glera</p>
+      </div>
+      <button class="btn secondary" data-action="contact-monitor">Escribir al monitor</button>
+    </div>
+    ${state.children.length > 1 ? `<div class="card" style="margin-top:12px">${childSelectHTML('child-sel')}</div>` : ''}
+    <div class="grid" style="margin-top:12px">
+      <div class="card col-7">
+        <div class="section-head"><h3>Datos de la actividad</h3></div>
+        <div class="detail-grid">
+          <div class="detail-row"><span>Grupo</span><b>${esc(child.group || '—')}</b></div>
+        </div>
+      </div>
+      <div class="col-5">
+        <div class="card metric">
+          <div class="metric-top"><span class="metric-ico">${NAV_ICONS.attendance}</span><small>${mesNombre}</small></div>
+          <div><b>${pct == null ? '—' : pct + '%'}</b><br><span>${present} de ${monthDocs.length} sesiones</span></div>
+        </div>
+        <button class="btn secondary block" data-action="go" data-screen="attendance" style="margin-top:12px">Ver asistencia completa</button>
+      </div>
+      <div class="card col-12">
+        <div class="section-head"><h3>Seguimiento reciente</h3>
+          <button class="text-btn" data-action="go" data-screen="progress">Ver progreso →</button></div>
+        ${lastEval ? `
+          <div class="meta" style="margin-bottom:8px">${fmtDate(lastEval.date)}</div>
+          <div class="rating-summary">${scores.map(s => `
+            <div class="rating-box"><b>${s.value}/3</b><small>${esc(s.label)}</small></div>`).join('')}
+          </div>
+          ${lastEval.comment ? `<p class="muted" style="margin-top:12px">${esc(lastEval.comment)}</p>` : ''}`
+          : emptyBox('📈', 'Aún no hay valoraciones.')}
+      </div>
+    </div>`;
+  const sel = $('child-sel');
+  if (sel) sel.addEventListener('change', () => { state.selectedChildId = sel.value; renderChild(); });
+}
 
 async function renderProgress() {
   const c = $('progress-content');
@@ -978,6 +1103,31 @@ ACTIONS['create-conversation'] = async () => {
 };
 ACTIONS['open-chat'] = (d) => openChat(d.id);
 
+// La familia escribe al monitor: abre (o crea) la conversación con un monitor.
+ACTIONS['contact-monitor'] = async () => {
+  const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
+  if (!child) { toast('Aún no hay alumnos vinculados a tu familia.'); return; }
+  const msnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'monitor'), limit(5)));
+  if (msnap.empty) { toast('Aún no hay monitores dados de alta.'); return; }
+  const m = msnap.docs[0];
+  // Reutiliza la conversación existente con ese monitor para este alumno, si la hay.
+  const csnap = await getDocs(query(collection(db, 'conversations'),
+    where('participantUids', 'array-contains', state.user.uid),
+    orderBy('updatedAt', 'desc'), limit(30)));
+  const existing = csnap.docs.find(d => {
+    const p = d.data();
+    return p.studentId === child.id && (p.participantUids || []).includes(m.id);
+  });
+  if (existing) { openChat(existing.id); return; }
+  const ref = await addDoc(collection(db, 'conversations'), {
+    participantUids: [state.user.uid, m.id],
+    studentId: child.id,
+    studentName: `${child.firstName} ${child.lastName || ''}`.trim(),
+    lastMessageText: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  openChat(ref.id);
+};
+
 async function openChat(convId) {
   state.currentConvId = convId;
   const csnap = await getDoc(doc(db, 'conversations', convId));
@@ -1236,8 +1386,11 @@ async function renderProfile() {
 ACTIONS['sign-out'] = async () => { await signOut(auth); };
 
 function renderMore() {
+  const fam = !isMonitor();
   const items = [
+    ...(fam ? [{ id: 'child', label: 'Mi hijo', icon: 'child' }] : []),
     { id: 'reports', label: 'Informes', icon: 'reports' },
+    ...(fam ? [{ id: 'notices', label: 'Avisos', icon: 'notices' }] : []),
     { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
     { id: 'calendar', label: 'Calendario', icon: 'calendar' },
     { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
@@ -1459,6 +1612,8 @@ Object.assign(RENDER, {
   profile: renderProfile,
   more: renderMore,
   users: renderUsers,
+  child: renderChild,
+  notices: renderNotices,
 });
 
 // Arranque: si hay configuración válida, se vigila la sesión; si no, se avisa en el login.
