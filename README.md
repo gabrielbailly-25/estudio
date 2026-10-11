@@ -143,7 +143,7 @@ glera-estudio-dirigido-app/
 | `users/{uid}` | `role` (admin/monitor/familia), `displayName`, `email` |
 | `users/{uid}/pushTokens/{token}` | tokens FCM del dispositivo |
 | `users/{uid}/notifications/{id}` | centro de notificaciones (la crea el backend) |
-| `students/{id}` | `firstName`, `lastName`, `group`, `familyUids: []` |
+| `students/{id}` | `firstName`, `lastName`, `group`, `familyUids: []` + datos de la actividad: `monitorName`, `schedule`, `classroom`, `startDate` (YYYY-MM-DD), `pickup` (editables por el admin en Usuarios) |
 | `sessions/{id}` | `date` (YYYY-MM-DD), `startTime`, `endTime`, `title` |
 | `attendance/{studentId}_{date}` | `studentId`, `date`, `status` (presente/ausente/justificado) |
 | `evaluations/{studentId}_{date}` | `studentId`, `date`, `scores: { itemId: valor }` (1-3), `comment` · (formato antiguo: `puntualidad`, `agenda`, `aprovechamiento`) |
