@@ -137,7 +137,10 @@ service cloud.firestore {
 
     // ---------- Mensajes de chat ----------
     match /messages/{msgId} {
-      allow read: if signedIn() && myUid() in resource.data.participantUids;
+      // Se puede leer si eres participante del mensaje o de su conversación
+      // (así los mensajes antiguos sin participantUids siguen siendo legibles).
+      allow read: if signedIn() && (myUid() in resource.data.participantUids
+                    || myUid() in get(/databases/$(database)/documents/conversations/$(resource.data.conversationId)).data.participantUids);
       // Solo un participante puede escribir, y siempre como él mismo.
       allow create: if signedIn()
                     && myUid() in request.resource.data.participantUids
