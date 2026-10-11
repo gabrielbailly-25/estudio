@@ -42,9 +42,11 @@ service cloud.firestore {
       // Al registrarse, el usuario crea su propia ficha siempre como "familia".
       allow create: if signedIn() && myUid() == uid
                     && request.resource.data.role == 'familia';
-      // No puede cambiarse el rol a sí mismo (lo hace un admin desde la consola).
-      allow update: if signedIn() && myUid() == uid
-                    && request.resource.data.role == resource.data.role;
+      // No puede cambiarse el rol a sí mismo (lo hace un admin desde la
+      // pantalla "Usuarios" de la app o desde la consola).
+      allow update: if isAdmin()
+                    || (signedIn() && myUid() == uid
+                        && request.resource.data.role == resource.data.role);
       allow delete: if false;
 
       // Tokens push del propio dispositivo.

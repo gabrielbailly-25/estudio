@@ -10,7 +10,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from 'firebase/auth';
 import {
-  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc,
+  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
   collection, query, where, orderBy, limit, getDocs,
   onSnapshot, serverTimestamp
 } from 'firebase/firestore';
@@ -32,7 +32,36 @@ const state = {
 };
 
 const isMonitor = () => state.role === 'monitor' || state.role === 'admin';
+const isAdmin = () => state.role === 'admin';
 const ROLE_LABEL = { admin: 'Administrador', monitor: 'Monitor/a', familia: 'Familia' };
+const initialsOf = (name) =>
+  String(name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+// Iconos SVG estilo prototipo (trazo fino, 24x24).
+const NAV_ICONS = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></svg>',
+  attendance: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 11l2 2 4-4"/></svg>',
+  evaluate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4zM8 8h8M8 12h5M8 16h3"/><path d="m16 15 1.5 1.5L21 13"/></svg>',
+  progress: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  reports: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h6M9 19h4"/></svg>',
+  auths: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h12v18H6zM9 7h6M9 11h6"/><path d="m9 16 2 2 4-4"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg>',
+  notifications: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+  profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+};
+
+// Título de la barra superior por pantalla.
+const TITLES = {
+  home: 'Inicio', attendance: 'Asistencia', evaluate: 'Evaluación diaria',
+  progress: 'Progreso', reports: 'Informes', reportDetail: 'Informe',
+  reportCompose: 'Nuevo informe', chatList: 'Chat', chatView: 'Chat',
+  auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
+  noticeCompose: 'Nuevo aviso', calendar: 'Calendario', notifications: 'Notificaciones',
+  profile: 'Mi perfil', more: 'Más', users: 'Usuarios',
+};
 
 /* ---------------- Utilidades ---------------- */
 const $ = (id) => document.getElementById(id);
@@ -93,35 +122,53 @@ document.addEventListener('click', (e) => {
 ACTIONS.go = (d) => show(d.screen);
 
 /* ---------------- Router de pantallas ---------------- */
-const SCREENS = ['login', 'home', 'attendance', 'evaluate', 'progress', 'reports',
+// El login es un overlay aparte (loginOverlay); aquí solo pantallas de la app.
+const SCREENS = ['home', 'attendance', 'evaluate', 'progress', 'reports',
   'reportDetail', 'reportCompose', 'chatList', 'chatView', 'auths', 'authDetail',
-  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more'];
+  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more', 'users'];
 const RENDER = {};
 
 function show(id) {
   // Al salir del chat se cierra su escucha en tiempo real.
   if (id !== 'chatView' && state.unsubChat) { state.unsubChat(); state.unsubChat = null; }
   SCREENS.forEach(s => $('screen-' + s).classList.toggle('active', s === id));
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
+  document.querySelectorAll('.nav-btn,.bottom-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === id));
+  $('pageTitle').textContent = TITLES[id] || '';
   window.scrollTo(0, 0);
   if (RENDER[id]) RENDER[id]();
 }
 
-/* ---------------- Navegación inferior (según rol) ---------------- */
+// Muestra/oculta el overlay de acceso.
+function setLoggedOut(out) {
+  document.body.classList.toggle('logged-out', out);
+  $('loginOverlay').classList.toggle('hidden', !out);
+}
+
+/* ---------------- Navegación (según rol) ---------------- */
 function renderNav() {
   const items = [
-    { id: 'home', label: 'Inicio', icon: '🏠' },
-    { id: 'attendance', label: 'Asistencia', icon: '✅' },
+    { id: 'home', label: 'Inicio', icon: 'home' },
+    { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
     isMonitor()
-      ? { id: 'evaluate', label: 'Evaluar', icon: '📝' }
-      : { id: 'progress', label: 'Progreso', icon: '📈' },
-    { id: 'chatList', label: 'Chat', icon: '💬' },
-    { id: 'more', label: 'Más', icon: '⋯' },
+      ? { id: 'evaluate', label: 'Evaluar', icon: 'evaluate' }
+      : { id: 'progress', label: 'Progreso', icon: 'progress' },
+    ...(isAdmin() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
+    { id: 'chatList', label: 'Chat', icon: 'chat' },
+    { id: 'more', label: 'Más', icon: 'more' },
   ];
-  $('bottomnav').innerHTML = items.map(i =>
-    `<button class="nav-btn" data-action="go" data-screen="${i.id}">
-       <span class="ic">${i.icon}</span>${i.label}
+  // Barra inferior (móvil).
+  const bottom = $('bottomnav');
+  bottom.innerHTML = items.map(i =>
+    `<button class="bottom-btn" data-action="go" data-screen="${i.id}">
+       <span class="ico">${NAV_ICONS[i.icon]}</span><span>${i.label}</span>
      </button>`).join('');
+  bottom.style.gridTemplateColumns = `repeat(${items.length},1fr)`;
+  // Barra lateral (escritorio).
+  $('desktopNav').innerHTML = items.map(i =>
+    `<button class="nav-btn" data-action="go" data-screen="${i.id}">
+       <span class="ico">${NAV_ICONS[i.icon]}</span>${i.label}
+     </button>`).join('');
+  $('railRole').textContent = 'Vista ' + (ROLE_LABEL[state.role] || state.role).toLowerCase();
 }
 
 /* ---------------- Firebase: init y auth ---------------- */
@@ -153,8 +200,7 @@ function watchAuth() {
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       state.user = null;
-      document.body.classList.add('logged-out');
-      show('login');
+      setLoggedOut(true);
       return;
     }
     try {
@@ -163,7 +209,7 @@ function watchAuth() {
       let snap = await getDoc(uref);
       if (!snap.exists()) {
         // Primer acceso: la ficha se crea como "familia".
-        // Un administrador cambia el rol a "monitor"/"admin" desde la consola.
+        // Un administrador cambia el rol desde la pantalla "Usuarios".
         await setDoc(uref, {
           role: 'familia',
           displayName: user.displayName || '',
@@ -174,7 +220,8 @@ function watchAuth() {
       }
       state.profile = snap.data();
       state.role = state.profile.role || 'familia';
-      document.body.classList.remove('logged-out');
+      $('btn-profile').textContent = initialsOf(state.profile.displayName);
+      setLoggedOut(false);
       await loadRoster();
       renderNav();
       show('home');
@@ -802,16 +849,18 @@ ACTIONS['sign-out'] = async () => { await signOut(auth); };
 
 function renderMore() {
   const items = [
-    { id: 'reports', label: 'Informes', icon: '📄' },
-    { id: 'auths', label: 'Autorizaciones', icon: '✍️' },
-    { id: 'calendar', label: 'Calendario', icon: '📅' },
-    { id: 'notifications', label: 'Notificaciones', icon: '🔔' },
-    { id: 'profile', label: 'Mi perfil', icon: '👤' },
+    { id: 'reports', label: 'Informes', icon: 'reports' },
+    { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
+    { id: 'calendar', label: 'Calendario', icon: 'calendar' },
+    { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
+    { id: 'profile', label: 'Mi perfil', icon: 'profile' },
   ];
-  $('more-content').innerHTML = `<h2>Más</h2>` + items.map(i =>
-    `<div class="menu-item" data-action="go" data-screen="${i.id}">
-      <span class="ic">${i.icon}</span>${i.label}<span class="chev">›</span>
-    </div>`).join('');
+  $('more-content').innerHTML = `
+    <div class="section-head"><h3>Más</h3></div>
+    <div class="card menu-list">` + items.map(i =>
+      `<button class="menu-row" data-action="go" data-screen="${i.id}">
+        <span><span class="ico">${NAV_ICONS[i.icon]}</span>${i.label}</span><b>›</b>
+      </button>`).join('') + `</div>`;
 }
 
 /* ---------------- Push: registro del token y mensajes en 1er plano ---------------- */
@@ -841,6 +890,118 @@ async function initPush() {
   }
 }
 
+/* ---------------- Usuarios (solo admin) ---------------- */
+async function renderUsers() {
+  if (!isAdmin()) { show('home'); return; }
+  const c = $('users-content');
+  const [usnap, ssnap] = await Promise.all([
+    getDocs(query(collection(db, 'users'), orderBy('displayName'))),
+    getDocs(query(collection(db, 'students'), orderBy('firstName'))),
+  ]);
+  const users = usnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const students = ssnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const familias = users.filter(u => u.role === 'familia');
+  c.innerHTML = `
+    <div class="section-head"><div><h3>Usuarios</h3>
+      <p>Cambia el rol de cada usuario.</p></div>
+      <span class="badge info">${users.length}</span></div>
+    <div class="item-list">
+      ${users.length ? users.map(u => `
+        <div class="list-item">
+          <span class="item-icon">👤</span>
+          <div class="item-main">
+            <h4>${esc(u.displayName || 'Sin nombre')}</h4>
+            <p>${esc(u.email || '')}</p>
+          </div>
+          <div class="item-side">
+            <select data-role-select="${u.id}" aria-label="Rol de ${esc(u.displayName || u.email || 'usuario')}">
+              ${['admin', 'monitor', 'familia'].map(r =>
+                `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+            </select>
+          </div>
+        </div>`).join('')
+      : emptyBox('👥', 'Aún no hay usuarios registrados.')}
+    </div>
+    <div class="section-head" style="margin-top:24px"><div><h3>Alumnos</h3>
+      <p>Da de alta alumnos y vincúlalos a sus familias.</p></div></div>
+    <div class="item-list">
+      ${students.length ? students.map(s => `
+        <div class="list-item">
+          <span class="item-icon">🎒</span>
+          <div class="item-main">
+            <h4>${esc(s.firstName)} ${esc(s.lastName || '')}</h4>
+            <p>${esc(s.group || 'Sin grupo')} · ${(s.familyUids || []).length} familia(s) vinculada(s)</p>
+          </div>
+          <div class="item-side">
+            <button class="danger-btn" data-action="delete-student" data-id="${s.id}">Eliminar</button>
+          </div>
+        </div>`).join('')
+      : emptyBox('🎒', 'Aún no hay alumnos dados de alta.')}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="section-head"><h3>Nuevo alumno</h3></div>
+      <label for="ns-first">Nombre</label>
+      <input type="text" id="ns-first" maxlength="60" autocomplete="off">
+      <label for="ns-last">Apellidos</label>
+      <input type="text" id="ns-last" maxlength="80" autocomplete="off">
+      <label for="ns-group">Grupo</label>
+      <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off">
+      <label>Familias vinculadas</label>
+      ${familias.length ? familias.map(f => `
+        <label class="check"><input type="checkbox" data-family-check value="${f.id}">
+          ${esc(f.displayName || f.email || 'Sin nombre')}</label>`).join('')
+        : '<p class="muted">No hay usuarios con rol de familia todavía.</p>'}
+      <button class="btn block" data-action="create-student">Guardar alumno</button>
+    </div>`;
+  c.querySelectorAll('[data-role-select]').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      try {
+        const uid = sel.dataset.roleSelect;
+        await updateDoc(doc(db, 'users', uid), { role: sel.value });
+        if (uid === state.user.uid) {
+          state.role = sel.value;
+          state.profile.role = sel.value;
+          renderNav();
+        }
+        toast('Rol actualizado.');
+      } catch (err) {
+        console.error(err);
+        toast('No se pudo cambiar el rol.');
+      }
+    });
+  });
+}
+ACTIONS['delete-student'] = async (d) => {
+  if (!confirm('¿Eliminar este alumno? Se borrará su ficha.')) return;
+  try {
+    await deleteDoc(doc(db, 'students', d.id));
+    toast('Alumno eliminado.');
+    renderUsers();
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo eliminar el alumno.');
+  }
+};
+ACTIONS['create-student'] = async () => {
+  const firstName = $('ns-first').value.trim();
+  if (!firstName) { toast('Escribe al menos el nombre del alumno.'); return; }
+  const familyUids = [...document.querySelectorAll('[data-family-check]:checked')].map(x => x.value);
+  try {
+    await addDoc(collection(db, 'students'), {
+      firstName,
+      lastName: $('ns-last').value.trim(),
+      group: $('ns-group').value.trim(),
+      familyUids,
+      createdAt: serverTimestamp(),
+    });
+    toast('Alumno dado de alta.');
+    renderUsers();
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo guardar el alumno.');
+  }
+};
+
 /* ---------------- Registro de pantallas (parte 2) y arranque ---------------- */
 Object.assign(RENDER, {
   reports: renderReports,
@@ -853,12 +1014,12 @@ Object.assign(RENDER, {
   notifications: renderNotifications,
   profile: renderProfile,
   more: renderMore,
+  users: renderUsers,
 });
 
 // Arranque: si hay configuración válida, se vigila la sesión; si no, se avisa en el login.
 if (initFirebase()) {
   watchAuth();
 } else {
-  document.body.classList.add('logged-out');
-  show('login');
+  setLoggedOut(true);
 }

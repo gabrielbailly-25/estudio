@@ -26,10 +26,9 @@ App web móvil (PWA) en español para la actividad de **Estudio Dirigido** de la
 2. Elige **Comenzar en modo de producción** (las reglas se despliegan en el paso 7).
 3. Ubicación: `europe-west` (p. ej. `europe-west1`; si te aparece Madrid `europe-southwest1`, también vale).
 
-### 4. Activar Storage
+### 4. Activar Storage (OPCIONAL — puedes saltarlo)
 
-1. **Compilación → Storage → Comenzar** (modo de producción).
-2. Las reglas de `storage.rules` se despliegan en el paso 7.
+> ⚠️ **Firebase pide ahora una cuenta de facturación (plan Blaze) para crear el bucket de Storage** en proyectos nuevos. La buena noticia: **esta versión de la app no usa Storage para nada** (no hay subida de fotos ni adjuntos), así que puedes saltar este paso por completo y no vincular facturación. Si en el futuro queréis adjuntar archivos (p. ej. fotos en informes), entonces sí habría que activarlo; el plan Blaze es de pago por uso, pero con el nivel gratuito (5 GB almacenados, 1 GB/día de descarga) y los $300 de crédito inicial una app tan pequeña no pagaría nada.
 
 ### 5. Registrar la app web y copiar la configuración
 
@@ -52,18 +51,26 @@ firebase use --add   # elige tu proyecto de la lista
 
 > También puedes editar `.firebaserc` a mano: sustituye `glera-estudio-dirigido` (marcado como TODO) por el ID real de tu proyecto.
 
-### 7. Desplegar reglas, índices y Storage
+### 7. Desplegar reglas e índices
 
 ```bash
-firebase deploy --only firestore:rules,firestore:indexes,storage
+firebase deploy --only firestore:rules,firestore:indexes
 ```
+
+> Si activaste Storage (paso 4 opcional), añade `,storage` al final del comando.
 
 ### 8. Crear el primer administrador
 
 1. Abre la app y entra con **Continuar con Google**.
 2. En la consola de Firestore verás tu documento en `users/{tu-uid}` con `role: "familia"`.
 3. Edítalo y cambia `role` a `"admin"`.
-4. A partir de ahí: cambia a `"monitor"` el rol de los monitores, y crea los alumnos en la colección `students` indicando en `familyUids` la lista de uid de sus familias (los ves en `users`).
+4. A partir de ahí gestiona todo desde la pantalla **Usuarios** de la app (visible solo para el admin, en la barra de navegación): cambia el `rol` de cada usuario con el desplegable (Administrador / Monitor/a / Familia), y da de alta alumnos en el bloque "Alumnos" vinculándolos a sus familias con las casillas.
+
+> ⚠️ **Tras modificar `firestore.rules` hay que volver a desplegarlas** para que el cambio tenga efecto (la pantalla "Usuarios" necesita el permiso de admin para editar roles). O bien:
+> ```bash
+> firebase deploy --only firestore:rules
+> ```
+> o bien pega el contenido de `firestore.rules` en la consola: **Firestore Database → Reglas → Publicar**.
 
 ### 9. Subir el código a GitHub
 
@@ -72,15 +79,15 @@ git init
 git add .
 git commit -m "MVP inicial: app Estudio Dirigido Glera"
 git branch -M main
-git remote add origin https://github.com/TU_USUARIO/glera-estudio-dirigido.git
+git remote add origin https://github.com/gabrielbailly-25/estudio.git
 git push -u origin main
 ```
 
 ### 10. Desplegar el frontend en Vercel
 
-1. En [vercel.com](https://vercel.com) → **Add New → Project** → importa el repositorio de GitHub.
-2. No hay paso de compilación: deja el **directorio de salida** en `public`.
-3. Despliega. Cada `push` a `main` redespliega automáticamente.
+1. En [vercel.com](https://vercel.com) → **Add New → Project** → importa el repositorio `gabrielbailly-25/estudio` (puedes entrar con tu cuenta de GitHub).
+2. En la configuración del proyecto: **Framework Preset** → `Other`; **Root Directory** → `public` (pulsa Edit y escribe `public`). No hay comando de compilación.
+3. Pulsa **Deploy**. Cada `push` a `main` redespliega automáticamente.
 
 > Alternativa: servir el frontend desde Firebase Hosting con `firebase deploy --only hosting`.
 

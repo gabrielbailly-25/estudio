@@ -6,7 +6,10 @@
   <title>Estudio Dirigido · Glera</title>
   <meta name="description" content="Comunicación entre familias y monitores de la actividad de Estudio Dirigido de la Asociación Juvenil Glera.">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#0a66c2">
+  <meta name="theme-color" content="#1f6b47">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
   <!-- Firebase JS SDK v10 mediante ES modules (sin compilación) -->
   <script type="importmap">
@@ -21,57 +24,80 @@
   </script>
 </head>
 <body class="logged-out">
-  <!-- Cabecera de la app (oculta en el login) -->
-  <header id="appheader">
-    <div class="brand">📚 Estudio Dirigido <span>Glera</span></div>
-    <button id="btn-bell" data-action="go" data-screen="notifications" aria-label="Notificaciones">
-      🔔<span id="notif-badge" class="badge hidden"></span>
-    </button>
-  </header>
-
-  <main id="app">
-    <!-- Acceso -->
-    <section id="screen-login" class="screen active">
-      <div class="login-wrap">
-        <div class="login-logo">📚</div>
-        <h1>Estudio Dirigido</h1>
-        <p class="muted">Asociación Juvenil Glera</p>
-        <div id="config-warning" class="warning hidden">
-          ⚠️ Falta configurar Firebase.<br>Sigue el paso 5 del README.md
-          (<code>public/js/firebase-config.js</code>).
-        </div>
-        <button id="btn-google" class="btn google">
-          <span class="g">G</span> Continuar con Google
-        </button>
-        <p class="tiny muted">Acceso para familias y monitores de la actividad.</p>
+  <!-- Acceso (visible solo sin sesión) -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-mark" aria-hidden="true">📚</div>
+      <h1>Estudio Dirigido</h1>
+      <p>Comunicación entre familias y monitores de la Asociación Juvenil Glera.</p>
+      <div id="config-warning" class="warning hidden">
+        ⚠️ Falta configurar Firebase.<br>Sigue el paso 5 del README.md
+        (<code>public/js/firebase-config.js</code>).
       </div>
-    </section>
+      <button class="google-btn" id="btn-google">
+        <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.92h5.38a4.6 4.6 0 0 1-2 3.01v2.54h3.24c1.9-1.75 2.98-4.33 2.98-7.4z"/><path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.62-2.37l-3.24-2.54c-.9.6-2.05.96-3.38.96-2.61 0-4.82-1.76-5.61-4.13H3.05v2.62A10 10 0 0 0 12 22z"/><path fill="#FBBC05" d="M6.39 13.92A6 6 0 0 1 6.08 12c0-.67.11-1.32.31-1.92V7.46H3.05A10 10 0 0 0 2 12c0 1.61.39 3.14 1.05 4.54z"/><path fill="#EA4335" d="M12 5.95c1.47 0 2.79.51 3.83 1.5L18.7 4.57A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.95 5.46l3.34 2.62C7.18 7.71 9.39 5.95 12 5.95z"/></svg>
+        Continuar con Google
+      </button>
+      <p class="demo-note">Acceso para familias y monitores de la actividad.</p>
+    </div>
+  </div>
 
-    <!-- El resto de pantallas las rellena app.js -->
-    <section id="screen-home" class="screen"><div id="home-content"></div></section>
-    <section id="screen-attendance" class="screen"><div id="attendance-content"></div></section>
-    <section id="screen-evaluate" class="screen"><div id="evaluate-content"></div></section>
-    <section id="screen-progress" class="screen"><div id="progress-content"></div></section>
-    <section id="screen-reports" class="screen"><div id="reports-content"></div></section>
-    <section id="screen-reportDetail" class="screen"><div id="report-detail-content"></div></section>
-    <section id="screen-reportCompose" class="screen"><div id="report-compose-content"></div></section>
-    <section id="screen-chatList" class="screen"><div id="chat-list-content"></div></section>
-    <section id="screen-chatView" class="screen"><div id="chat-view-content"></div></section>
-    <section id="screen-auths" class="screen"><div id="auths-content"></div></section>
-    <section id="screen-authDetail" class="screen"><div id="auth-detail-content"></div></section>
-    <section id="screen-authCompose" class="screen"><div id="auth-compose-content"></div></section>
-    <section id="screen-noticeCompose" class="screen"><div id="notice-compose-content"></div></section>
-    <section id="screen-calendar" class="screen"><div id="calendar-content"></div></section>
-    <section id="screen-notifications" class="screen"><div id="notifications-content"></div></section>
-    <section id="screen-profile" class="screen"><div id="profile-content"></div></section>
-    <section id="screen-more" class="screen"><div id="more-content"></div></section>
-  </main>
+  <div class="app-shell">
+    <!-- Barra lateral (solo escritorio) -->
+    <aside class="rail" aria-label="Navegación principal">
+      <div class="rail-head">
+        <span class="eyebrow">Asociación Juvenil</span>
+        <strong>Estudio Dirigido</strong>
+        <span class="role-mini" id="railRole">Glera</span>
+      </div>
+      <nav class="nav-list" id="desktopNav"></nav>
+      <div class="rail-foot"><b>Asociación Juvenil Glera</b><br>Estudio Dirigido · Curso 2026–2027</div>
+    </aside>
 
-  <!-- Navegación inferior (la rellena app.js según el rol) -->
-  <nav id="bottomnav"></nav>
+    <div class="main">
+      <!-- Barra superior -->
+      <header class="topbar">
+        <h1 class="page-title" id="pageTitle">Inicio</h1>
+        <div class="top-actions">
+          <button class="bell-btn" id="btn-bell" data-action="go" data-screen="notifications" aria-label="Abrir notificaciones">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+            <span class="notification-count hidden" id="notif-badge"></span>
+          </button>
+          <button class="avatar-btn" id="btn-profile" data-action="go" data-screen="profile" aria-label="Abrir mi perfil">?</button>
+        </div>
+      </header>
+
+      <main id="app">
+        <div class="content">
+          <!-- Las pantallas las rellena app.js -->
+          <section id="screen-home" class="screen"><div id="home-content"></div></section>
+          <section id="screen-attendance" class="screen"><div id="attendance-content"></div></section>
+          <section id="screen-evaluate" class="screen"><div id="evaluate-content"></div></section>
+          <section id="screen-progress" class="screen"><div id="progress-content"></div></section>
+          <section id="screen-reports" class="screen"><div id="reports-content"></div></section>
+          <section id="screen-reportDetail" class="screen"><div id="report-detail-content"></div></section>
+          <section id="screen-reportCompose" class="screen"><div id="report-compose-content"></div></section>
+          <section id="screen-chatList" class="screen"><div id="chat-list-content"></div></section>
+          <section id="screen-chatView" class="screen"><div id="chat-view-content"></div></section>
+          <section id="screen-auths" class="screen"><div id="auths-content"></div></section>
+          <section id="screen-authDetail" class="screen"><div id="auth-detail-content"></div></section>
+          <section id="screen-authCompose" class="screen"><div id="auth-compose-content"></div></section>
+          <section id="screen-noticeCompose" class="screen"><div id="notice-compose-content"></div></section>
+          <section id="screen-calendar" class="screen"><div id="calendar-content"></div></section>
+          <section id="screen-notifications" class="screen"><div id="notifications-content"></div></section>
+          <section id="screen-profile" class="screen"><div id="profile-content"></div></section>
+          <section id="screen-more" class="screen"><div id="more-content"></div></section>
+          <section id="screen-users" class="screen"><div id="users-content"></div></section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Navegación inferior (solo móvil; la rellena app.js según el rol) -->
+  <nav class="bottom-nav" id="bottomnav" aria-label="Navegación principal"></nav>
 
   <!-- Avisos dentro de la app -->
-  <div id="toast" role="status" aria-live="polite"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script type="module" src="/js/app.js"></script>
 </body>

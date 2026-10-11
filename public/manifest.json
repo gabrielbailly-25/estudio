@@ -1,1 +1,22 @@
-{"background_color":"#ffffff","description":"Comunicación entre familias y monitores de la actividad de Estudio Dirigido de la Asociación Juvenil Glera.","display":"standalone","icons":[{"sizes":"192x192","src":"/icon-192.png","type":"image/png"},{"sizes":"512x512","src":"/icon-512.png","type":"image/png"}],"lang":"es","name":"Estudio Dirigido Glera","short_name":"Estudio Glera","start_url":"/index.html","theme_color":"#0a66c2"}
+{
+  "background_color": "#f4f6f1",
+  "description": "Comunicación entre familias y monitores de la actividad de Estudio Dirigido de la Asociación Juvenil Glera.",
+  "display": "standalone",
+  "icons": [
+    {
+      "sizes": "192x192",
+      "src": "/icon-192.png",
+      "type": "image/png"
+    },
+    {
+      "sizes": "512x512",
+      "src": "/icon-512.png",
+      "type": "image/png"
+    }
+  ],
+  "lang": "es",
+  "name": "Estudio Dirigido Glera",
+  "short_name": "Estudio Glera",
+  "start_url": "/index.html",
+  "theme_color": "#1f6b47"
+}
