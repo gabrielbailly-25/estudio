@@ -1174,7 +1174,12 @@ async function openChat(convId) {
       console.error('Error al escuchar mensajes:', err);
       const box = $('chat-messages');
       if (box) box.innerHTML = emptyBox('⚠️', 'No se pudieron cargar los mensajes.');
-      toast('Error al cargar el chat.');
+      const reason = err.code === 'failed-precondition'
+        ? 'Falta el índice de mensajes en Firestore.'
+        : err.code === 'permission-denied'
+          ? 'Sin permiso para leer estos mensajes.'
+          : ('Error al cargar el chat (' + (err.code || 'desconocido') + ').');
+      toast(reason);
     });
   $('chat-text').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') ACTIONS['send-message']();
