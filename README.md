@@ -4,6 +4,8 @@ App web móvil (PWA) en español para la actividad de **Estudio Dirigido** de la
 
 **Stack:** HTML/CSS/JS plano, sin paso de compilación (ideal para GitHub + Vercel). Firebase: Authentication (login con Google), Firestore, Cloud Messaging (push) y Storage.
 
+**Pantallas:** las familias ven Inicio (dashboard), Mi hijo, Informes, Avisos, Asistencia, Chat y Más; los monitores ven Inicio, Asistencia, Evaluar, Chat y Más (más Usuarios solo para el admin). Los avisos del tablón se pueden editar y eliminar (monitores); las familias pueden iniciar un chat con el monitor desde "Mi hijo" → "Escribir al monitor".
+
 ---
 
 ## Puesta en marcha paso a paso
@@ -66,7 +68,10 @@ firebase deploy --only firestore:rules,firestore:indexes
 3. Edítalo y cambia `role` a `"admin"`.
 4. A partir de ahí gestiona todo desde la pantalla **Usuarios** de la app (visible solo para el admin, en la barra de navegación): cambia el `rol` de cada usuario con el desplegable (Administrador / Monitor/a / Familia), y da de alta alumnos en el bloque "Alumnos" vinculándolos a sus familias con las casillas.
 
-> ⚠️ **Tras modificar `firestore.rules` hay que volver a desplegarlas** para que el cambio tenga efecto (la pantalla "Usuarios" necesita el permiso de admin para editar roles). O bien:
+> ⚠️ **Tras modificar `firestore.rules` hay que volver a desplegarlas** para que el cambio tenga efecto. Cambios recientes que lo requieren:
+> - La pantalla "Usuarios" necesita el permiso de admin para editar roles.
+> - La regla `allow create` de `conversations` ahora permite a cualquier usuario identificado crear una conversación en la que él mismo participa (antes solo monitores): así las familias pueden usar "Escribir al monitor".
+> O bien:
 > ```bash
 > firebase deploy --only firestore:rules
 > ```

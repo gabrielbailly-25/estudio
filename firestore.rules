@@ -127,7 +127,10 @@ service cloud.firestore {
     // ---------- Conversaciones de chat ----------
     match /conversations/{convId} {
       allow read: if signedIn() && myUid() in resource.data.participantUids;
-      allow create: if isMonitor();
+      // Cualquiera identificado puede crear una conversación siempre que él
+      // mismo sea participante (los monitores desde el chat; las familias con
+      // el botón "Escribir al monitor").
+      allow create: if signedIn() && myUid() in request.resource.data.participantUids;
       allow update: if signedIn() && myUid() in resource.data.participantUids;
       allow delete: if false;
     }
