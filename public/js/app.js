@@ -1468,11 +1468,11 @@ async function registerPushToken() {
     return { ok: false, reason: 'no-vapid' };
   }
   // Registra el SW de forma explícita para obtener errores claros.
+  // Sin scope personalizado: iOS rechaza scopes distintos del directorio
+  // del script; el scope por defecto (/) siempre está permitido.
   let registration;
   try {
-    registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
-      scope: '/firebase-cloud-messaging-push-scope',
-    });
+    registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
   } catch (e) {
     console.warn('No se pudo registrar el service worker:', e);
     return { ok: false, reason: 'sw-failed', error: e };
