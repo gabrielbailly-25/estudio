@@ -353,3 +353,72 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 @media (max-width: 899px) {
   .rail { display: none !important; }
 }
+
+/* ---------- Dashboard (del prototipo): saludo, rejilla, métricas ---------- */
+.greeting { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
+.greeting h2 { font: 800 clamp(27px, 5vw, 42px)/1.08 "Manrope"; letter-spacing: -.035em; margin: 0 0 7px; }
+.greeting p { margin: 0; color: var(--muted); font-size: 17px; }
+.date-chip { white-space: nowrap; color: var(--muted); font-weight: 650; text-transform: capitalize; }
+.grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.col-12 { grid-column: span 12; } .col-8 { grid-column: span 8; }
+.col-7 { grid-column: span 7; } .col-6 { grid-column: span 6; }
+.col-5 { grid-column: span 5; } .col-4 { grid-column: span 4; }
+.card.clickable { transition: transform .18s, border-color .18s; cursor: pointer; }
+.card.clickable:hover { transform: translateY(-2px); border-color: var(--brand); }
+.metric { min-height: 138px; display: flex; flex-direction: column; justify-content: space-between; }
+.metric-top { display: flex; align-items: center; justify-content: space-between; }
+.metric-ico {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--brand-soft); color: var(--brand);
+}
+.metric-ico.orange { background: var(--accent-soft); color: var(--accent); }
+.metric-ico.blue { background: var(--blue-soft); color: var(--blue); }
+.metric-ico svg { width: 20px; height: 20px; }
+.metric b { font: 800 30px/1 "Manrope"; }
+.metric span { color: var(--muted); font-weight: 600; }
+.metric small { color: var(--muted); }
+.notice-feature {
+  background: var(--brand-2); color: #fff; border: 0;
+  position: relative; overflow: hidden; min-height: 214px; padding: 25px;
+}
+.notice-feature:after {
+  content: ""; position: absolute; width: 180px; height: 180px; border-radius: 50%;
+  right: -72px; bottom: -90px; background: rgba(255, 255, 255, .08);
+}
+.notice-feature .badge { background: var(--accent); color: #271507; }
+.notice-feature h3 { font: 800 25px/1.22 "Manrope"; max-width: 520px; margin: 35px 0 10px; color: #fff; }
+.notice-feature p { color: #d8e8de; margin: 0; max-width: 550px; font-size: 16px; }
+.notice-meta { display: flex; gap: 12px; align-items: center; margin-top: 21px; color: #d8e8de; font-size: 13px; }
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.filter {
+  border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  border-radius: 999px; padding: 8px 13px; font-weight: 700;
+}
+.filter.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+.history-line { display: flex; justify-content: space-between; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.history-line:last-child { border: 0; }
+.history-line b { font-weight: 700; }
+.icon-btn {
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  width: 35px; height: 35px; border-radius: 10px; display: grid; place-items: center; font-size: 17px;
+}
+.icon-btn:disabled { opacity: .35; cursor: default; }
+.rating-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.rating-box { background: var(--surface-2); border-radius: 12px; padding: 12px 8px; text-align: center; }
+.rating-box b { display: block; font: 800 19px "Manrope"; color: var(--brand); }
+.rating-box small { color: var(--muted); line-height: 1.15; display: block; margin-top: 3px; }
+@media (max-width: 899px) {
+  .grid { gap: 12px; }
+  .col-8, .col-7, .col-6, .col-5, .col-4 { grid-column: span 12; }
+  .metrics-mobile { grid-column: span 6; }
+  .metric { min-height: 118px; }
+  .date-chip { display: none; }
+  .greeting { align-items: flex-start; }
+  .greeting h2 { font-size: 29px; }
+  .greeting p { font-size: 15px; }
+  .notice-feature h3 { font-size: 22px; margin-top: 26px; }
+  .rating-summary { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 390px) {
+  .metrics-mobile { grid-column: span 12; }
+}
