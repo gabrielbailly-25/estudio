@@ -141,8 +141,9 @@ glera-estudio-dirigido-app/
 | `students/{id}` | `firstName`, `lastName`, `group`, `familyUids: []` |
 | `sessions/{id}` | `date` (YYYY-MM-DD), `startTime`, `endTime`, `title` |
 | `attendance/{studentId}_{date}` | `studentId`, `date`, `status` (presente/ausente/justificado) |
-| `evaluations/{studentId}_{date}` | `studentId`, `date`, `puntualidad`, `agenda`, `aprovechamiento` (1-3), `comment` |
-| `reports/{id}` | `studentId`, `title`, `body`, `month` (YYYY-MM) |
+| `evaluations/{studentId}_{date}` | `studentId`, `date`, `scores: { itemId: valor }` (1-3), `comment` · (formato antiguo: `puntualidad`, `agenda`, `aprovechamiento`) |
+| `evalItems/{id}` | `label`, `order`, `active` — ítems configurables de la evaluación diaria (los gestiona el monitor con ⚙️) |
+| `reports/{id}` | `studentId`, `title`, `body`, `type` (diario/mensual), `month` (YYYY-MM) |
 | `notices/{id}` | `title`, `body`, `pinned` (tablón de anuncios) |
 | `authorizations/{id}` | `title`, `description`, `dueDate` |
 | `authorizations/{id}/signatures/{uid}` | `signedAt`, `displayName` |
@@ -154,3 +155,4 @@ glera-estudio-dirigido-app/
 - La app **arranca vacía**: no incluye datos de ejemplo. Crea sesiones, alumnos y avisos desde la vista de monitor/administrador.
 - El primer usuario que entra queda como `familia`; el administrador se asigna a mano (paso 8).
 - Para los iconos PWA, añade `public/icon-192.png` y `public/icon-512.png` (referenciados en `manifest.json`).
+- **Tras cambiar `firestore.rules`** (p. ej. al añadir la colección `evalItems`), hay que redesplegar las reglas: `firebase deploy --only firestore:rules` o pegar el contenido en la consola (Firestore Database → Reglas → Publicar). Sin esto, la app dará errores de permisos.
