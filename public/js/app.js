@@ -14,7 +14,7 @@ import {
   collection, query, where, orderBy, limit, getDocs,
   onSnapshot, serverTimestamp
 } from 'firebase/firestore';
-import { getMessaging, getToken, onMessage, isSupported } from 'firebase/messaging';
+import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'firebase/messaging';
 
 /* ---------------- Estado global ---------------- */
 const state = {
@@ -29,6 +29,7 @@ const state = {
   evalMarks: {},    // marcas temporales al evaluar (clave: id del ítem)
   evalItems: [],    // ítems de evaluación configurables (colección evalItems)
   reportFilter: 'all', // filtro de informes en vista familia: all | diario | mensual
+  pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   unsubChat: null,
   unsubNotif: null,
 };
@@ -1169,9 +1170,27 @@ function subscribeNotifications() {
 
 async function renderNotifications() {
   const c = $('notifications-content');
+  const ps = pushStatus();
+  const pushCard = `
+    <div class="card" style="margin-bottom:12px">
+      <div class="row">
+        <div><strong>Notificaciones push</strong>
+          <p class="muted" style="margin:4px 0 0">${
+            ps === 'on' ? 'Activadas en este dispositivo. Recibirás avisos aunque la app esté cerrada.' :
+            ps === 'blocked' ? 'Bloqueadas en tu navegador. Actívalas en los ajustes del sitio para recibirlas.' :
+            ps === 'unsupported' ? 'Tu navegador no admite notificaciones push.' :
+            'Desactivadas. Actívalas para recibir avisos aunque la app esté cerrada.'}</p>
+        </div>
+        ${ps === 'on'
+          ? `<button class="btn small secondary" data-action="toggle-push">Desactivar</button>`
+          : ps === 'off'
+            ? `<button class="btn small" data-action="toggle-push">Activar</button>`
+            : ''}
+      </div>
+    </div>`;
   const snap = await getDocs(query(collection(db, 'users', state.user.uid, 'notifications'),
     orderBy('createdAt', 'desc'), limit(50)));
-  c.innerHTML = `
+  c.innerHTML = pushCard + `
     <div class="screen-head"><h2>Notificaciones</h2>
       ${snap.size ? `<button class="btn small secondary" data-action="read-all-notif">Marcar leídas</button>` : ''}
     </div><div id="notif-list"></div>`;
@@ -1238,19 +1257,9 @@ async function initPush() {
     if (!await isSupported()) return;
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return;
-    if (!vapidKey || vapidKey === 'TODO') {
-      console.warn('Falta la clave VAPID: genera una en Firebase console (ver README, paso 5).');
-      return;
-    }
-    const messaging = getMessaging(app);
-    const token = await getToken(messaging, { vapidKey });
-    if (token) {
-      // Guarda el token para que el backend pueda enviar push a este dispositivo.
-      await setDoc(doc(db, 'users', state.user.uid, 'pushTokens', token), {
-        token, platform: 'web', createdAt: serverTimestamp(),
-      });
-    }
+    await registerPushToken();
     // Con la app abierta, los push se muestran como aviso interno.
+    const messaging = getMessaging(app);
     onMessage(messaging, (payload) => {
       toast('🔔 ' + ((payload.notification && payload.notification.title) || 'Nuevo aviso'));
     });
@@ -1258,6 +1267,72 @@ async function initPush() {
     console.warn('Push no disponible:', err);
   }
 }
+
+// Obtiene el token FCM de este dispositivo y lo guarda para que el backend
+// pueda enviarle push. Devuelve true si quedó registrado.
+async function registerPushToken() {
+  if (!vapidKey || vapidKey === 'TODO') {
+    console.warn('Falta la clave VAPID: genera una en Firebase console (ver README, paso 5).');
+    return false;
+  }
+  const messaging = getMessaging(app);
+  const token = await getToken(messaging, { vapidKey });
+  if (!token) return false;
+  await setDoc(doc(db, 'users', state.user.uid, 'pushTokens', token), {
+    token, platform: 'web', createdAt: serverTimestamp(),
+  });
+  state.pushToken = token;
+  try { localStorage.setItem('gleraPushToken', token); } catch (e) {}
+  return true;
+}
+
+// Elimina el token de este dispositivo (deja de recibir push aquí).
+async function unregisterPushToken() {
+  try {
+    const token = state.pushToken || localStorage.getItem('gleraPushToken');
+    if (token && state.user) {
+      try { await deleteToken(getMessaging(app)); } catch (e) {}
+      await deleteDoc(doc(db, 'users', state.user.uid, 'pushTokens', token));
+    }
+  } catch (err) {
+    console.warn('No se pudo desactivar el push:', err);
+  }
+  state.pushToken = null;
+  try { localStorage.removeItem('gleraPushToken'); } catch (e) {}
+}
+
+// Estado del push en este dispositivo: 'on' | 'off' | 'blocked' | 'unsupported'.
+function pushStatus() {
+  if (!('Notification' in window)) return 'unsupported';
+  if (Notification.permission === 'denied') return 'blocked';
+  let hasToken = state.pushToken;
+  if (!hasToken) { try { hasToken = localStorage.getItem('gleraPushToken'); } catch (e) {} }
+  if (Notification.permission === 'granted' && hasToken) return 'on';
+  return 'off';
+}
+
+ACTIONS['toggle-push'] = async () => {
+  const st = pushStatus();
+  if (st === 'on') {
+    await unregisterPushToken();
+    toast('Notificaciones push desactivadas en este dispositivo.');
+  } else if (st === 'off') {
+    try {
+      if (!await isSupported()) { toast('Tu navegador no admite notificaciones push.'); return; }
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        const ok = await registerPushToken();
+        toast(ok ? 'Notificaciones push activadas.' : 'No se pudo activar el push en este dispositivo.');
+      } else {
+        toast('Permiso no concedido.');
+      }
+    } catch (err) {
+      console.warn('Push no disponible:', err);
+      toast('No se pudo activar el push en este dispositivo.');
+    }
+  }
+  show('notifications');
+};
 
 /* ---------------- Usuarios (solo admin) ---------------- */
 async function renderUsers() {
