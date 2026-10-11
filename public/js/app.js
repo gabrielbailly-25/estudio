@@ -26,7 +26,9 @@ const state = {
   selectedChildId: null,
   currentConvId: null,
   attMarks: {},     // marcas temporales al pasar lista
-  evalMarks: {},    // marcas temporales al evaluar
+  evalMarks: {},    // marcas temporales al evaluar (clave: id del ítem)
+  evalItems: [],    // ítems de evaluación configurables (colección evalItems)
+  reportFilter: 'all', // filtro de informes en vista familia: all | diario | mensual
   unsubChat: null,
   unsubNotif: null,
 };
@@ -61,6 +63,7 @@ const TITLES = {
   auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
   noticeCompose: 'Nuevo aviso', calendar: 'Calendario', notifications: 'Notificaciones',
   profile: 'Mi perfil', more: 'Más', users: 'Usuarios',
+  evalItems: 'Ítems de evaluación',
 };
 
 /* ---------------- Utilidades ---------------- */
@@ -111,6 +114,62 @@ const childSelectHTML = (id) => `
     ${state.children.map(c => `<option value="${c.id}" ${c.id === state.selectedChildId ? 'selected' : ''}>${esc(c.firstName)} ${esc(c.lastName || '')}</option>`).join('')}
   </select>`;
 
+/* ---------------- Ayudas de dashboard, informes y evaluación ---------------- */
+// Saludo según la hora del día.
+const saludoHora = () => {
+  const h = new Date().getHours();
+  return h < 13 ? 'Buenos días' : h < 21 ? 'Buenas tardes' : 'Buenas noches';
+};
+// "Domingo, 11 de octubre".
+const fechaLargaHoy = () => {
+  const s = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+// Tipo de informe: 'diario' | 'mensual' (los antiguos con mes cuentan como mensuales).
+const reportType = (r) => r.type || (r.month ? 'mensual' : 'diario');
+// Puntuaciones de una evaluación como [{label, value}]; compatible con el formato
+// antiguo (campos puntualidad/agenda/aprovechamiento) y el nuevo (mapa scores).
+function evalScores(e) {
+  if (e.scores && typeof e.scores === 'object' && Object.keys(e.scores).length) {
+    const labels = {};
+    (state.evalItems || []).forEach(it => { labels[it.id] = it.label; });
+    return Object.entries(e.scores).map(([id, v]) => ({ label: labels[id] || 'Ítem', value: v }));
+  }
+  const out = [];
+  if (e.puntualidad != null) out.push({ label: 'Puntualidad', value: e.puntualidad });
+  if (e.agenda != null) out.push({ label: 'Uso de la agenda', value: e.agenda });
+  if (e.aprovechamiento != null) out.push({ label: 'Aprovechamiento del tiempo', value: e.aprovechamiento });
+  return out;
+}
+// Media de puntuaciones con coma decimal ("2,7"); null si no hay.
+const avgScore = (scores) => {
+  if (!scores.length) return null;
+  return (scores.reduce((a, s) => a + s.value, 0) / scores.length).toFixed(1).replace('.', ',');
+};
+// Ítems de evaluación configurables (colección evalItems). Si está vacía y el
+// usuario es monitor, se crean los 3 ítems clásicos. Nunca rompe el arranque:
+// si faltan las reglas, devuelve [] y la evaluación avisa.
+async function loadEvalItems() {
+  try {
+    const snap = await getDocs(query(collection(db, 'evalItems'), orderBy('order')));
+    let items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (!items.length && isMonitor()) {
+      const defaults = ['Puntualidad', 'Uso de la agenda', 'Aprovechamiento del tiempo'];
+      for (let i = 0; i < defaults.length; i++) {
+        const ref = await addDoc(collection(db, 'evalItems'), { label: defaults[i], order: i + 1, active: true });
+        items.push({ id: ref.id, label: defaults[i], order: i + 1, active: true });
+      }
+      toast('Ítems de evaluación creados.');
+    }
+    state.evalItems = items;
+    return items;
+  } catch (err) {
+    console.error('evalItems no disponible (¿reglas sin desplegar?):', err);
+    state.evalItems = [];
+    return [];
+  }
+}
+
 /* ---------------- Acciones (delegación de clics) ---------------- */
 const ACTIONS = {};
 document.addEventListener('click', (e) => {
@@ -125,7 +184,8 @@ ACTIONS.go = (d) => show(d.screen);
 // El login es un overlay aparte (loginOverlay); aquí solo pantallas de la app.
 const SCREENS = ['home', 'attendance', 'evaluate', 'progress', 'reports',
   'reportDetail', 'reportCompose', 'chatList', 'chatView', 'auths', 'authDetail',
-  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more', 'users'];
+  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more', 'users',
+  'evalItems'];
 const RENDER = {};
 
 function show(id) {
@@ -223,6 +283,7 @@ function watchAuth() {
       $('btn-profile').textContent = initialsOf(state.profile.displayName);
       setLoggedOut(false);
       await loadRoster();
+      await loadEvalItems();
       renderNav();
       show('home');
       subscribeNotifications();
@@ -251,25 +312,159 @@ async function loadRoster() {
   }
 }
 
-/* ---------------- Inicio: tablón de anuncios ---------------- */
+/* ---------------- Inicio: dashboard ---------------- */
+ACTIONS['scroll-tablon'] = () => {
+  const t = $('tablon');
+  if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
 async function renderHome() {
   const c = $('home-content');
-  const snap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
-  const notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  // Fijados primero (en cliente, para no necesitar otro índice).
+  const fam = !isMonitor();
+  const nombre = (state.profile.displayName || '').split(' ')[0] || (fam ? 'familia' : 'monitor');
+  const child = fam ? (state.children.find(x => x.id === state.selectedChildId) || state.children[0]) : null;
+  const subtitulo = fam
+    ? (child ? `Este es el resumen de ${esc(child.firstName)} para hoy.` : 'Bienvenido/a a Estudio Dirigido.')
+    : `${state.students.length} alumno(s) en la actividad.`;
+
+  // Último aviso del tablón (fijados primero, como en la lista).
+  const nsnap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
+  const notices = nsnap.docs.map(d => ({ id: d.id, ...d.data() }));
   notices.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-  c.innerHTML = `
-    <div class="screen-head"><h2>📋 Tablón de anuncios</h2>
-      ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="noticeCompose">+ Publicar</button>` : ''}
-    </div>
-    ${notices.length ? notices.map(n => `
+  const latest = notices[0];
+
+  // Próxima sesión (primer doc con date >= hoy).
+  let nextSession = null;
+  try {
+    const ssnap = await getDocs(query(collection(db, 'sessions'),
+      where('date', '>=', todayStr()), orderBy('date', 'asc'), limit(1)));
+    if (!ssnap.empty) nextSession = ssnap.docs[0].data();
+  } catch (err) { console.error(err); }
+
+  // Métricas según el rol.
+  let metrics = '';
+  let lastEval = null; // última evaluación del hijo (se reutiliza abajo)
+  if (fam && child) {
+    const firstMonth = todayStr().slice(0, 7) + '-01';
+    const mesNombre = MESES_LARGO[new Date().getMonth()];
+    const [asnap, authsnap, evsnap] = await Promise.all([
+      getDocs(query(collection(db, 'attendance'),
+        where('studentId', '==', child.id), orderBy('date', 'desc'), limit(60))),
+      getDocs(query(collection(db, 'authorizations'), orderBy('createdAt', 'desc'), limit(20))),
+      getDocs(query(collection(db, 'evaluations'),
+        where('studentId', '==', child.id), orderBy('date', 'desc'), limit(1))),
+    ]);
+    const monthDocs = asnap.docs.map(d => d.data()).filter(a => a.date >= firstMonth);
+    const pct = monthDocs.length
+      ? Math.round(monthDocs.filter(a => a.status === 'presente').length / monthDocs.length * 100)
+      : null;
+    let pending = 0;
+    for (const d of authsnap.docs) {
+      const s = await getDoc(doc(db, 'authorizations', d.id, 'signatures', state.user.uid));
+      if (!s.exists()) pending++;
+    }
+    lastEval = evsnap.empty ? null : evsnap.docs[0].data();
+    const todayEval = (lastEval && lastEval.date === todayStr()) ? lastEval : null;
+    const todayAvg = todayEval ? avgScore(evalScores(todayEval)) : null;
+    metrics = `
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="attendance">
+        <div class="metric-top"><span class="metric-ico">${NAV_ICONS.attendance}</span><small>${mesNombre}</small></div>
+        <div><b>${pct == null ? '—' : pct + '%'}</b><br><span>de asistencia</span></div>
+      </div>
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="auths">
+        <div class="metric-top"><span class="metric-ico orange">${NAV_ICONS.auths}</span><small>Por revisar</small></div>
+        <div><b>${pending}</b><br><span>pendiente(s) de firma</span></div>
+      </div>
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="progress">
+        <div class="metric-top"><span class="metric-ico blue">${NAV_ICONS.evaluate}</span><small>Hoy</small></div>
+        <div>${todayAvg ? `<b>${todayAvg}</b><br><span>valoración de hoy</span>` : `<b>—</b><br><span>Sin evaluar hoy</span>`}</div>
+      </div>`;
+  } else if (!fam) {
+    const [attsnap, authsnap, evsnap] = await Promise.all([
+      getDocs(query(collection(db, 'attendance'), where('date', '==', todayStr()))),
+      getDocs(query(collection(db, 'authorizations'), orderBy('createdAt', 'desc'), limit(50))),
+      getDocs(query(collection(db, 'evaluations'), where('date', '==', todayStr()))),
+    ]);
+    metrics = `
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="attendance">
+        <div class="metric-top"><span class="metric-ico">${NAV_ICONS.attendance}</span><small>Hoy</small></div>
+        <div><b>${attsnap.size}</b><br><span>asistencias de hoy</span></div>
+      </div>
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="auths">
+        <div class="metric-top"><span class="metric-ico orange">${NAV_ICONS.auths}</span><small>Abiertas</small></div>
+        <div><b>${authsnap.size}</b><br><span>autorizaciones</span></div>
+      </div>
+      <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="evaluate">
+        <div class="metric-top"><span class="metric-ico blue">${NAV_ICONS.evaluate}</span><small>Hoy</small></div>
+        <div><b>${evsnap.size}/${state.students.length}</b><br><span>evaluaciones hechas</span></div>
+      </div>`;
+  }
+
+  // Tarjeta "Última valoración" (familia) o "Acciones rápidas" (monitor).
+  let extraCard = '';
+  if (fam && child) {
+    const scores = lastEval ? evalScores(lastEval) : [];
+    extraCard = `
+      <div class="col-12"><div class="section-head"><h3>Última valoración</h3>
+        <button class="text-btn" data-action="go" data-screen="progress">Ver progreso →</button></div></div>
+      <div class="col-12">${lastEval ? `
+        <article class="card clickable" data-action="go" data-screen="progress">
+          <span class="badge ok">${fmtDate(lastEval.date)}</span>
+          <h3 style="margin:12px 0 5px">${esc(lastEval.comment || 'Valoración del día')}</h3>
+          <p class="muted">${scores.map(s => `${esc(s.label)}: ${s.value}/3`).join(' · ')}</p>
+        </article>`
+        : emptyBox('📈', 'Aún no hay valoraciones de tu hijo/a.')}</div>`;
+  } else if (!fam) {
+    extraCard = `
+      <div class="col-12"><div class="section-head"><h3>Acciones rápidas</h3></div></div>
+      <div class="col-12"><div class="card"><div class="filters" style="margin:0">
+        <button class="btn" data-action="go" data-screen="attendance">Pasar lista</button>
+        <button class="btn secondary" data-action="go" data-screen="evaluate">Evaluar sesión</button>
+        <button class="btn secondary" data-action="go" data-screen="noticeCompose">Nuevo aviso</button>
+      </div></div></div>`;
+  }
+
+  // Lista completa del tablón.
+  const noticeList = notices.length ? notices.map(n => `
       <div class="card">
         ${n.pinned ? '<span class="pinned-tag">📌 Fijado</span>' : ''}
         <h3>${esc(n.title)}</h3>
         <p>${esc(n.body)}</p>
         <div class="meta">${tsToDate(n.createdAt)}</div>
       </div>`).join('')
-      : emptyBox('📋', 'Aún no hay avisos en el tablón.')}`;
+    : emptyBox('📋', 'Aún no hay avisos en el tablón.');
+
+  c.innerHTML = `
+    <div class="greeting">
+      <div><h2>${saludoHora()}, ${esc(nombre)}</h2><p>${subtitulo}</p></div>
+      <span class="date-chip">${fechaLargaHoy()}</span>
+    </div>
+    <div class="grid">
+      <div class="col-8">
+        ${latest ? `
+        <article class="card notice-feature clickable" data-action="scroll-tablon">
+          <span class="badge">${latest.pinned ? 'Fijado · ' : ''}Último aviso</span>
+          <h3>${esc(latest.title)}</h3>
+          <p>${esc(latest.body)}</p>
+          <div class="notice-meta"><span>Equipo de Estudio Dirigido</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
+        </article>` : emptyBox('📋', 'Aún no hay avisos en el tablón.')}
+      </div>
+      <div class="col-4"><div class="card">
+        <div class="section-head"><h3>Próxima sesión</h3></div>
+        ${nextSession ? `
+          <p style="font:800 28px Manrope;margin:14px 0 2px">${fmtDate(nextSession.date)}</p>
+          <p class="muted" style="margin:0">${esc(nextSession.startTime || '')}${nextSession.endTime ? '–' + esc(nextSession.endTime) : ''}${(nextSession.room || nextSession.aula) ? ' · ' + esc(nextSession.room || nextSession.aula) : ''}</p>
+          ${nextSession.title ? `<p class="muted" style="margin:6px 0 0">${esc(nextSession.title)}</p>` : ''}` : `
+          <p class="muted" style="margin:14px 0">Sin sesiones programadas.</p>`}
+        <button class="text-btn" data-action="go" data-screen="calendar" style="margin-top:18px">Ver calendario →</button>
+      </div></div>
+      ${metrics}
+      ${extraCard}
+      <div class="col-12" id="tablon"><div class="section-head"><h3>Tablón de anuncios</h3>
+        ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="noticeCompose">+ Publicar</button>` : ''}
+      </div></div>
+      <div class="col-12">${noticeList}</div>
+    </div>`;
 }
 
 async function renderNoticeCompose() {
@@ -376,12 +571,6 @@ async function loadAttendanceHistory() {
 }
 
 /* ---------------- Evaluación diaria (monitor) / Progreso (familia) ---------------- */
-const EVAL_LABEL = { 1: 'Necesita mejorar', 2: 'Bien', 3: 'Muy bien' };
-const EVAL_CRITS = [
-  ['puntualidad', 'Puntualidad'],
-  ['agenda', 'Uso de la agenda'],
-  ['aprovechamiento', 'Aprovechamiento del tiempo'],
-];
 
 async function renderEvaluate() {
   const c = $('evaluate-content');
@@ -389,24 +578,31 @@ async function renderEvaluate() {
     c.innerHTML = `<h2>Evaluación diaria</h2>` + emptyBox('📝', 'Aún no hay alumnos dados de alta.');
     return;
   }
-  state.evalMarks = { puntualidad: 2, agenda: 2, aprovechamiento: 2 };
+  const items = (await loadEvalItems()).filter(i => i.active !== false);
+  state.evalMarks = {};
+  items.forEach(it => { state.evalMarks[it.id] = 2; });
   c.innerHTML = `
-    <h2>Evaluación diaria</h2>
+    <div class="section-head"><h2>Evaluación diaria</h2>
+      <button class="icon-btn" data-action="go" data-screen="evalItems" aria-label="Configurar ítems de evaluación">⚙️</button>
+    </div>
+    ${items.length ? `
     <label for="ev-student">Alumno/a</label>
     <select id="ev-student">${state.students.map(s =>
       `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
     <label for="ev-date">Fecha</label>
     <input type="date" id="ev-date" value="${todayStr()}">
-    ${EVAL_CRITS.map(([k, label]) => `
-      <label>${label}</label>
+    ${items.map(it => `
+      <label>${esc(it.label)}</label>
       <div class="seg">
-        <button data-action="ev-mark" data-crit="${k}" data-val="1">1 · Mejorar</button>
-        <button data-action="ev-mark" data-crit="${k}" data-val="2" class="on">2 · Bien</button>
-        <button data-action="ev-mark" data-crit="${k}" data-val="3">3 · Muy bien</button>
+        <button data-action="ev-mark" data-crit="${it.id}" data-val="1">1 · Mejorar</button>
+        <button data-action="ev-mark" data-crit="${it.id}" data-val="2" class="on">2 · Bien</button>
+        <button data-action="ev-mark" data-crit="${it.id}" data-val="3">3 · Muy bien</button>
       </div>`).join('')}
+    <div class="meta" style="margin-top:8px">1 Necesita mejorar · 2 Bien · 3 Muy bien</div>
     <label for="ev-comment">Comentario (opcional)</label>
     <textarea id="ev-comment" placeholder="Observaciones del día…"></textarea>
-    <button class="btn block" data-action="save-evaluation">Guardar evaluación</button>`;
+    <button class="btn block" data-action="save-evaluation">Guardar evaluación</button>`
+    : emptyBox('⚙️', 'No hay ítems de evaluación activos. Configúralos con el botón ⚙️.')}`;
 }
 ACTIONS['ev-mark'] = (d, el) => {
   state.evalMarks[d.crit] = parseInt(d.val, 10);
@@ -416,11 +612,10 @@ ACTIONS['ev-mark'] = (d, el) => {
 ACTIONS['save-evaluation'] = async () => {
   const studentId = $('ev-student').value;
   const date = $('ev-date').value || todayStr();
+  const scores = {};
+  for (const [k, v] of Object.entries(state.evalMarks)) scores[k] = v;
   await setDoc(doc(db, 'evaluations', `${studentId}_${date}`), {
-    studentId, date,
-    puntualidad: state.evalMarks.puntualidad,
-    agenda: state.evalMarks.agenda,
-    aprovechamiento: state.evalMarks.aprovechamiento,
+    studentId, date, scores,
     comment: $('ev-comment').value.trim(),
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
   }, { merge: true });
@@ -447,21 +642,112 @@ async function loadProgress() {
     where('studentId', '==', state.selectedChildId), orderBy('date', 'desc'), limit(30)));
   if (snap.empty) { box.innerHTML = emptyBox('📈', 'Aún no hay evaluaciones.'); return; }
   const latest = snap.docs[0].data();
-  const critCard = (label, v) =>
-    `<div class="card"><div class="row"><span>${label}</span><strong>${v} · ${EVAL_LABEL[v] || ''}</strong></div></div>`;
+  const latestScores = evalScores(latest);
   box.innerHTML = `
     <h3>Última evaluación (${fmtDate(latest.date)})</h3>
-    ${critCard('Puntualidad', latest.puntualidad)}
-    ${critCard('Uso de la agenda', latest.agenda)}
-    ${critCard('Aprovechamiento del tiempo', latest.aprovechamiento)}
-    ${latest.comment ? `<div class="card"><p>💬 ${esc(latest.comment)}</p></div>` : ''}
+    <div class="rating-summary">
+      ${latestScores.map(s => `
+        <div class="rating-box"><b>${s.value}/3</b><small>${esc(s.label)}</small></div>`).join('')}
+    </div>
+    ${latest.comment ? `<div class="card" style="margin-top:12px"><p>💬 ${esc(latest.comment)}</p></div>` : ''}
     <hr class="divider"><h3>Historial</h3>
     ${snap.docs.map(d => {
       const e = d.data();
+      const sc = evalScores(e);
+      const avg = avgScore(sc);
       return `<div class="card"><div class="row"><strong>${fmtDate(e.date)}</strong>
-        <span class="meta">P:${e.puntualidad} · A:${e.agenda} · T:${e.aprovechamiento}</span></div></div>`;
+        <span class="meta">${avg ? `Media ${avg}` : '—'}</span></div></div>`;
     }).join('')}`;
 }
+
+/* ---------------- Ítems de evaluación (configuración del monitor) ---------------- */
+async function renderEvalItems() {
+  if (!isMonitor()) { show('home'); return; }
+  const c = $('evalitems-content');
+  const items = await loadEvalItems();
+  c.innerHTML = `
+    <button class="back" data-action="go" data-screen="evaluate">‹ Evaluación diaria</button>
+    <div class="section-head"><div><h3>Ítems de evaluación</h3>
+      <p>Define qué se valora cada día (escala 1-3).</p></div></div>
+    <div class="item-list">
+      ${items.length ? items.map((it, idx) => `
+        <div class="list-item">
+          <span class="item-icon">📝</span>
+          <div class="item-main">
+            <input type="text" data-item-label="${it.id}" value="${esc(it.label)}" maxlength="60" aria-label="Nombre del ítem">
+            <label class="check" style="margin:8px 0 0"><input type="checkbox" data-item-active="${it.id}" ${it.active !== false ? 'checked' : ''}> Activo</label>
+          </div>
+          <div class="item-side">
+            <div class="row" style="gap:4px">
+              <button class="icon-btn" data-action="evalitem-move" data-id="${it.id}" data-dir="-1" ${idx === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
+              <button class="icon-btn" data-action="evalitem-move" data-id="${it.id}" data-dir="1" ${idx === items.length - 1 ? 'disabled' : ''} aria-label="Bajar">↓</button>
+            </div>
+            <button class="danger-btn" data-action="evalitem-delete" data-id="${it.id}">Eliminar</button>
+          </div>
+        </div>`).join('')
+      : emptyBox('📝', 'No hay ítems. Añade el primero abajo.')}
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="section-head"><h3>Nuevo ítem</h3></div>
+      <label for="ei-new">Nombre del ítem</label>
+      <input type="text" id="ei-new" maxlength="60" placeholder="Ej.: Comportamiento" autocomplete="off">
+      <button class="btn block" data-action="evalitem-add">Añadir ítem</button>
+    </div>`;
+  c.querySelectorAll('[data-item-label]').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const v = inp.value.trim();
+      const prev = (state.evalItems.find(i => i.id === inp.dataset.itemLabel) || {}).label || '';
+      if (!v) { inp.value = prev; toast('El nombre no puede estar vacío.'); return; }
+      try {
+        await updateDoc(doc(db, 'evalItems', inp.dataset.itemLabel), { label: v });
+        const it = state.evalItems.find(i => i.id === inp.dataset.itemLabel);
+        if (it) it.label = v;
+        toast('Ítem actualizado.');
+      } catch (err) { console.error(err); inp.value = prev; toast('No se pudo guardar.'); }
+    });
+  });
+  c.querySelectorAll('[data-item-active]').forEach(chk => {
+    chk.addEventListener('change', async () => {
+      try {
+        await updateDoc(doc(db, 'evalItems', chk.dataset.itemActive), { active: chk.checked });
+        const it = state.evalItems.find(i => i.id === chk.dataset.itemActive);
+        if (it) it.active = chk.checked;
+        toast(chk.checked ? 'Ítem activado.' : 'Ítem desactivado.');
+      } catch (err) { console.error(err); chk.checked = !chk.checked; toast('No se pudo guardar.'); }
+    });
+  });
+}
+ACTIONS['evalitem-add'] = async () => {
+  const label = $('ei-new').value.trim();
+  if (!label) { toast('Escribe el nombre del ítem.'); return; }
+  const maxOrder = (state.evalItems || []).reduce((m, i) => Math.max(m, i.order || 0), 0);
+  try {
+    await addDoc(collection(db, 'evalItems'), { label, order: maxOrder + 1, active: true });
+    toast('Ítem añadido.');
+    renderEvalItems();
+  } catch (err) { console.error(err); toast('No se pudo añadir.'); }
+};
+ACTIONS['evalitem-delete'] = async (d) => {
+  const it = (state.evalItems || []).find(i => i.id === d.id);
+  if (!confirm(`¿Eliminar el ítem "${it ? it.label : ''}"? Las evaluaciones ya guardadas no se borran.`)) return;
+  try {
+    await deleteDoc(doc(db, 'evalItems', d.id));
+    toast('Ítem eliminado.');
+    renderEvalItems();
+  } catch (err) { console.error(err); toast('No se pudo eliminar.'); }
+};
+ACTIONS['evalitem-move'] = async (d) => {
+  const items = [...(state.evalItems || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const idx = items.findIndex(i => i.id === d.id);
+  const j = idx + parseInt(d.dir, 10);
+  if (idx < 0 || j < 0 || j >= items.length) return;
+  try {
+    const [a, b] = [items[idx], items[j]];
+    await updateDoc(doc(db, 'evalItems', a.id), { order: b.order });
+    await updateDoc(doc(db, 'evalItems', b.id), { order: a.order });
+    renderEvalItems();
+  } catch (err) { console.error(err); toast('No se pudo reordenar.'); }
+};
 
 // Registro de pantallas de esta primera parte.
 Object.assign(RENDER, {
@@ -469,6 +755,7 @@ Object.assign(RENDER, {
   attendance: renderAttendance,
   evaluate: renderEvaluate,
   progress: renderProgress,
+  evalItems: renderEvalItems,
 });
 
 /* ============================================================
@@ -480,53 +767,135 @@ Object.assign(RENDER, {
 async function renderReports() {
   const c = $('reports-content');
   if (isMonitor()) {
+    // Estado del mes: cuenta diarios/mensuales creados este mes.
+    const msnap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
+    const ym = todayStr().slice(0, 7);
+    let nDiario = 0, nMensual = 0;
+    msnap.docs.forEach(d => {
+      const r = d.data();
+      let rym = '';
+      try { rym = r.createdAt.toDate().toISOString().slice(0, 7); } catch { /* sin fecha */ }
+      if (rym === ym) { reportType(r) === 'mensual' ? nMensual++ : nDiario++; }
+    });
     c.innerHTML = `
-      <div class="screen-head"><h2>Informes</h2>
-        <button class="btn small" data-action="go" data-screen="reportCompose">+ Nuevo</button>
-      </div><div id="reports-list"></div>`;
-    const snap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(40)));
-    $('reports-list').innerHTML = snap.empty
+      <div class="screen-head"><h2>Informes</h2></div>
+      <div class="grid">
+        <div class="col-7"><div class="card">
+          <div class="section-head"><h3>Preparar informe</h3><span class="badge info">Borrador</span></div>
+          <div class="report-form">
+            <label for="rp-student">Alumno/a</label>
+            <select id="rp-student">${state.students.map(s =>
+              `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+            <label for="rp-type">Tipo</label>
+            <select id="rp-type">
+              <option value="diario">Diario</option>
+              <option value="mensual">Mensual</option>
+            </select>
+            <label for="rp-month">Mes</label>
+            <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
+            <label for="rp-title">Título</label>
+            <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Informe de octubre">
+            <label for="rp-body">Informe</label>
+            <textarea id="rp-body" placeholder="Cómo va el alumno en la actividad…"></textarea>
+            <div class="row" style="margin-top:12px;gap:8px">
+              <button class="btn secondary" data-action="preview-report" style="flex:1">Previsualizar</button>
+              <button class="btn" data-action="publish-report2" style="flex:1">Publicar y avisar</button>
+            </div>
+            <p class="meta" style="margin-top:8px">Al publicar, la familia recibe un aviso automáticamente.</p>
+          </div>
+        </div></div>
+        <div class="col-5"><div class="card">
+          <div class="section-head"><h3>Estado del mes</h3></div>
+          <div class="history-line"><span>Informes diarios</span><b>${nDiario}</b></div>
+          <div class="history-line"><span>Informes mensuales</span><b>${nMensual}</b></div>
+          <p class="meta" style="margin-top:10px">Enviados en ${fmtMonth(ym)}.</p>
+        </div></div>
+      </div>
+      <div class="section-head" style="margin-top:8px"><h3>Enviados</h3></div>
+      <div id="reports-list"></div>`;
+    $('reports-list').innerHTML = msnap.empty
       ? emptyBox('📄', 'Aún no hay informes.')
-      : snap.docs.map(d => reportCard(d.id, d.data())).join('');
+      : msnap.docs.map(d => reportCard(d.id, d.data())).join('');
   } else {
     if (!state.children.length) {
       c.innerHTML = `<h2>Informes</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
       return;
     }
+    const f = state.reportFilter || 'all';
     c.innerHTML = `<h2>Informes</h2>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
+      <div class="filters">
+        <button class="filter ${f === 'all' ? 'active' : ''}" data-action="report-filter" data-f="all">Todos</button>
+        <button class="filter ${f === 'diario' ? 'active' : ''}" data-action="report-filter" data-f="diario">Diarios</button>
+        <button class="filter ${f === 'mensual' ? 'active' : ''}" data-action="report-filter" data-f="mensual">Mensuales</button>
+      </div>
       <div id="reports-list" style="margin-top:12px"></div>`;
     const sel = $('rep-child');
     if (sel) sel.addEventListener('change', () => { state.selectedChildId = sel.value; loadReports(); });
     await loadReports();
   }
 }
+ACTIONS['report-filter'] = (d) => { state.reportFilter = d.f; renderReports(); };
 
 const reportCard = (id, r) => `
   <div class="card" data-action="open-report" data-id="${id}" style="cursor:pointer">
     <h3>${esc(r.title)}</h3>
-    <div class="meta">${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
+    <div class="meta">${r.type ? `<span class="tag">${r.type === 'mensual' ? 'Mensual' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
   </div>`;
 
 async function loadReports() {
   const box = $('reports-list');
   const snap = await getDocs(query(collection(db, 'reports'),
     where('studentId', '==', state.selectedChildId), orderBy('createdAt', 'desc'), limit(40)));
-  box.innerHTML = snap.empty
-    ? emptyBox('📄', 'Aún no hay informes.')
-    : snap.docs.map(d => reportCard(d.id, d.data())).join('');
+  let docs = snap.docs;
+  const f = state.reportFilter || 'all';
+  if (f !== 'all') docs = docs.filter(d => reportType(d.data()) === f);
+  box.innerHTML = docs.length
+    ? docs.map(d => reportCard(d.id, d.data())).join('')
+    : emptyBox('📄', f === 'all' ? 'Aún no hay informes.' : 'No hay informes de este tipo.');
 }
 
+function showReportDetail(r) {
+  const dateStr = r._preview ? 'Ahora mismo' : tsToDate(r.createdAt);
+  $('report-detail-content').innerHTML = `
+    <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
+    ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
+    <h2 style="margin-top:10px">${esc(r.title)}</h2>
+    <div class="meta">${r.type ? `<span class="tag">${r.type === 'mensual' ? 'Mensual' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
+    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p></div>`;
+  show('reportDetail');
+}
 ACTIONS['open-report'] = async (d) => {
   const snap = await getDoc(doc(db, 'reports', d.id));
   if (!snap.exists()) return;
-  const r = snap.data();
-  $('report-detail-content').innerHTML = `
-    <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
-    <h2>${esc(r.title)}</h2>
-    <div class="meta">${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
-    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p></div>`;
-  show('reportDetail');
+  showReportDetail(snap.data());
+};
+ACTIONS['preview-report'] = () => {
+  const studentId = $('rp-student').value;
+  const s = state.students.find(x => x.id === studentId);
+  showReportDetail({
+    title: $('rp-title').value.trim() || '(Sin título)',
+    body: $('rp-body').value.trim() || '(Sin texto)',
+    type: $('rp-type').value,
+    month: $('rp-month').value || null,
+    studentName: s ? `${s.firstName} ${s.lastName || ''}`.trim() : '',
+    _preview: true,
+  });
+};
+ACTIONS['publish-report2'] = async () => {
+  const studentId = $('rp-student').value;
+  const title = $('rp-title').value.trim();
+  const body = $('rp-body').value.trim();
+  if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
+  if (!title || !body) { toast('Escribe un título y el texto del informe.'); return; }
+  await addDoc(collection(db, 'reports'), {
+    studentId, title, body,
+    type: $('rp-type').value,
+    month: $('rp-month').value || null,
+    createdByUid: state.user.uid, createdAt: serverTimestamp(),
+  });
+  toast('Informe publicado. La familia recibirá un aviso.');
+  show('reports');
 };
 
 async function renderReportCompose() {
