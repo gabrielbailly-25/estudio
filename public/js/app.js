@@ -10,7 +10,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
 } from 'firebase/auth';
 import {
-  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc,
+  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField,
   collection, query, where, orderBy, limit, getDocs,
   onSnapshot, serverTimestamp
 } from 'firebase/firestore';
@@ -31,6 +31,7 @@ const state = {
   reportFilter: 'all', // filtro de informes en vista familia: all | diario | mensual
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   editingNoticeId: null, // aviso en edición (null = crear nuevo)
+  editingStudentId: null, // alumno en edición en la pantalla Usuarios (null = crear nuevo)
   unsubChat: null,
   unsubNotif: null,
 };
@@ -713,7 +714,7 @@ async function renderChild() {
       <div>
         ${child.group ? `<span class="tag">${esc(child.group)}</span>` : ''}
         <h2>${esc(child.firstName)} ${esc(child.lastName || '')}</h2>
-        <p class="muted" style="margin:4px 0 0">Estudio Dirigido · Glera</p>
+        <p class="muted" style="margin:4px 0 0">Estudio Dirigido · Curso 2026–2027</p>
       </div>
       <button class="btn secondary" data-action="contact-monitor">Escribir al monitor</button>
     </div>
@@ -722,7 +723,12 @@ async function renderChild() {
       <div class="card col-7">
         <div class="section-head"><h3>Datos de la actividad</h3></div>
         <div class="detail-grid">
+          <div class="detail-row"><span>Monitor responsable</span><b>${esc(child.monitorName || '—')}</b></div>
           <div class="detail-row"><span>Grupo</span><b>${esc(child.group || '—')}</b></div>
+          <div class="detail-row"><span>Horario habitual</span><b>${esc(child.schedule || '—')}</b></div>
+          <div class="detail-row"><span>Aula habitual</span><b>${esc(child.classroom || '—')}</b></div>
+          <div class="detail-row"><span>Inicio</span><b>${child.startDate ? fmtDate(child.startDate) : '—'}</b></div>
+          <div class="detail-row"><span>Recogida</span><b>${esc(child.pickup || '—')}</b></div>
         </div>
       </div>
       <div class="col-5">
@@ -1498,6 +1504,9 @@ async function renderUsers() {
   const users = usnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const students = ssnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const familias = users.filter(u => u.role === 'familia');
+  const es = state.editingStudentId ? students.find(s => s.id === state.editingStudentId) : null;
+  if (state.editingStudentId && !es) state.editingStudentId = null; // el alumno en edición ya no existe
+  const esFam = es ? (es.familyUids || []) : [];
   c.innerHTML = `
     <div class="section-head"><div><h3>Usuarios</h3>
       <p>Cambia el rol de cada usuario.</p></div>
@@ -1530,25 +1539,37 @@ async function renderUsers() {
             <p>${esc(s.group || 'Sin grupo')} · ${(s.familyUids || []).length} familia(s) vinculada(s)</p>
           </div>
           <div class="item-side">
+            <button class="text-btn" data-action="edit-student" data-id="${s.id}">Editar</button>
             <button class="danger-btn" data-action="delete-student" data-id="${s.id}">Eliminar</button>
           </div>
         </div>`).join('')
       : emptyBox('🎒', 'Aún no hay alumnos dados de alta.')}
     </div>
-    <div class="card" style="margin-top:16px">
-      <div class="section-head"><h3>Nuevo alumno</h3></div>
+    <div class="card" id="student-form" style="margin-top:16px">
+      <div class="section-head"><h3>${es ? 'Editar alumno' : 'Nuevo alumno'}</h3></div>
       <label for="ns-first">Nombre</label>
-      <input type="text" id="ns-first" maxlength="60" autocomplete="off">
+      <input type="text" id="ns-first" maxlength="60" autocomplete="off" value="${esc(es?.firstName || '')}">
       <label for="ns-last">Apellidos</label>
-      <input type="text" id="ns-last" maxlength="80" autocomplete="off">
+      <input type="text" id="ns-last" maxlength="80" autocomplete="off" value="${esc(es?.lastName || '')}">
       <label for="ns-group">Grupo</label>
-      <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off">
+      <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off" value="${esc(es?.group || '')}">
+      <label for="ns-monitor">Monitor responsable</label>
+      <input type="text" id="ns-monitor" maxlength="80" autocomplete="off" value="${esc(es?.monitorName || '')}">
+      <label for="ns-schedule">Horario habitual</label>
+      <input type="text" id="ns-schedule" maxlength="60" placeholder="Ej.: L–J · 17:00–18:30" autocomplete="off" value="${esc(es?.schedule || '')}">
+      <label for="ns-classroom">Aula habitual</label>
+      <input type="text" id="ns-classroom" maxlength="40" placeholder="Ej.: Aula 1" autocomplete="off" value="${esc(es?.classroom || '')}">
+      <label for="ns-start">Inicio</label>
+      <input type="date" id="ns-start" value="${esc(es?.startDate || '')}">
+      <label for="ns-pickup">Recogida</label>
+      <input type="text" id="ns-pickup" maxlength="80" placeholder="Ej.: Salida con familiar" autocomplete="off" value="${esc(es?.pickup || '')}">
       <label>Familias vinculadas</label>
       ${familias.length ? familias.map(f => `
-        <label class="check"><input type="checkbox" data-family-check value="${f.id}">
+        <label class="check"><input type="checkbox" data-family-check value="${f.id}" ${esFam.includes(f.id) ? 'checked' : ''}>
           ${esc(f.displayName || f.email || 'Sin nombre')}</label>`).join('')
         : '<p class="muted">No hay usuarios con rol de familia todavía.</p>'}
-      <button class="btn block" data-action="create-student">Guardar alumno</button>
+      <button class="btn block" data-action="create-student">${es ? 'Guardar cambios' : 'Guardar alumno'}</button>
+      ${es ? `<button class="btn secondary block" data-action="cancel-edit-student" style="margin-top:8px">Cancelar</button>` : ''}
     </div>`;
   c.querySelectorAll('[data-role-select]').forEach(sel => {
     sel.addEventListener('change', async () => {
@@ -1579,19 +1600,45 @@ ACTIONS['delete-student'] = async (d) => {
     toast('No se pudo eliminar el alumno.');
   }
 };
+ACTIONS['edit-student'] = (d) => {
+  state.editingStudentId = d.id;
+  renderUsers();
+  setTimeout(() => { const f = $('student-form'); if (f) f.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+};
+ACTIONS['cancel-edit-student'] = () => {
+  state.editingStudentId = null;
+  renderUsers();
+};
 ACTIONS['create-student'] = async () => {
   const firstName = $('ns-first').value.trim();
   if (!firstName) { toast('Escribe al menos el nombre del alumno.'); return; }
   const familyUids = [...document.querySelectorAll('[data-family-check]:checked')].map(x => x.value);
+  // Campos opcionales: solo se guardan si tienen valor (al editar, vaciarlos los elimina).
+  const editing = !!state.editingStudentId;
+  const opt = (id, key) => {
+    const v = $(id).value.trim();
+    return v ? { [key]: v } : (editing ? { [key]: deleteField() } : {});
+  };
+  const data = {
+    firstName,
+    lastName: $('ns-last').value.trim(),
+    group: $('ns-group').value.trim(),
+    familyUids,
+    ...opt('ns-monitor', 'monitorName'),
+    ...opt('ns-schedule', 'schedule'),
+    ...opt('ns-classroom', 'classroom'),
+    ...opt('ns-start', 'startDate'),
+    ...opt('ns-pickup', 'pickup'),
+  };
   try {
-    await addDoc(collection(db, 'students'), {
-      firstName,
-      lastName: $('ns-last').value.trim(),
-      group: $('ns-group').value.trim(),
-      familyUids,
-      createdAt: serverTimestamp(),
-    });
-    toast('Alumno dado de alta.');
+    if (editing) {
+      await updateDoc(doc(db, 'students', state.editingStudentId), data);
+      state.editingStudentId = null;
+      toast('Alumno actualizado.');
+    } else {
+      await addDoc(collection(db, 'students'), { ...data, createdAt: serverTimestamp() });
+      toast('Alumno dado de alta.');
+    }
     renderUsers();
   } catch (err) {
     console.error(err);
