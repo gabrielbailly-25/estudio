@@ -2,8 +2,11 @@
    El navegador lo registra automáticamente al pedir el token push.
    TODO: pega aquí el MISMO objeto firebaseConfig de public/js/firebase-config.js */
 
-importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js');
+
+importScripts('/js/vendor/firebase-app-compat.js');
+importScripts('/js/vendor/firebase-messaging-compat.js');
+
+
 
 
 firebase.initializeApp({
@@ -16,7 +19,9 @@ apiKey: "AIzaSyCTSMVoftDPr15yjqOTmG7oqUWVhZ_w5x8",
   measurementId: "G-766SQX6TPN"
 });
 
+
 const messaging = firebase.messaging();
+
 
 // Muestra la notificación cuando llega un push con la app en segundo plano o cerrada.
 messaging.onBackgroundMessage((payload) => {
