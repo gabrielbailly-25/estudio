@@ -1150,20 +1150,31 @@ async function openChat(convId) {
     </div>`;
   show('chatView');
   // Escucha en tiempo real: los mensajes aparecen al instante.
+  if (state.unsubChat) { state.unsubChat(); state.unsubChat = null; }
   state.unsubChat = onSnapshot(
     query(collection(db, 'messages'),
       where('conversationId', '==', convId), orderBy('createdAt', 'asc'), limit(200)),
     (snap) => {
       const box = $('chat-messages');
       if (!box) return;
-      box.innerHTML = snap.docs.map(d => {
+      // Ignora escrituras aún sin fecha de servidor (el mensaje recién
+      // enviado se muestra de forma optimista hasta que se confirma).
+      const docs = snap.docs.filter(d => { try { return !!d.data().createdAt; } catch { return false; } });
+      box.innerHTML = docs.map(d => {
         const m = d.data();
         const mine = m.senderUid === state.user.uid;
         return `<div class="msg ${mine ? 'mine' : 'theirs'}">
           ${mine ? '' : `<span class="who">${esc(m.senderName || '')}</span>`}
-          ${esc(m.text)}</div>`;
+          ${esc(m.text)}
+          <span class="when">${tsToDate(m.createdAt)}</span></div>`;
       }).join('') || emptyBox('💬', 'Aún no hay mensajes. ¡Escribe el primero!');
       box.scrollTop = box.scrollHeight;
+    },
+    (err) => {
+      console.error('Error al escuchar mensajes:', err);
+      const box = $('chat-messages');
+      if (box) box.innerHTML = emptyBox('⚠️', 'No se pudieron cargar los mensajes.');
+      toast('Error al cargar el chat.');
     });
   $('chat-text').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') ACTIONS['send-message']();
@@ -1174,17 +1185,34 @@ ACTIONS['send-message'] = async () => {
   const input = $('chat-text');
   const text = input.value.trim();
   if (!text || !state.currentConvId) return;
-  const csnap = await getDoc(doc(db, 'conversations', state.currentConvId));
-  const participantUids = (csnap.data() && csnap.data().participantUids) || [];
-  await addDoc(collection(db, 'messages'), {
-    conversationId: state.currentConvId, participantUids,
-    senderUid: state.user.uid, senderName: state.profile.displayName || 'Usuario',
-    text, createdAt: serverTimestamp(),
-  });
-  await updateDoc(doc(db, 'conversations', state.currentConvId), {
-    lastMessageText: text, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp(),
-  });
   input.value = '';
+  // Optimista: el mensaje se ve al instante mientras se envía.
+  const box = $('chat-messages');
+  let tmp = null;
+  if (box) {
+    tmp = document.createElement('div');
+    tmp.className = 'msg mine pending';
+    tmp.textContent = text;
+    box.appendChild(tmp);
+    box.scrollTop = box.scrollHeight;
+  }
+  try {
+    const csnap = await getDoc(doc(db, 'conversations', state.currentConvId));
+    const participantUids = (csnap.data() && csnap.data().participantUids) || [];
+    await addDoc(collection(db, 'messages'), {
+      conversationId: state.currentConvId, participantUids,
+      senderUid: state.user.uid, senderName: state.profile.displayName || 'Usuario',
+      text, createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'conversations', state.currentConvId), {
+      lastMessageText: text, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('No se pudo enviar el mensaje:', err);
+    if (tmp) tmp.remove();
+    input.value = text;
+    toast('No se pudo enviar el mensaje.');
+  }
 };
 
 /* ---------------- Autorizaciones ---------------- */
