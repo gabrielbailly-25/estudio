@@ -92,6 +92,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ---------- Ítems de evaluación diaria (configurables por el monitor) ----------
+    match /evalItems/{itemId} {
+      allow read: if signedIn();
+      allow write: if isMonitor();
+    }
+
     // ---------- Informes (mensuales) ----------
     match /reports/{reportId} {
       allow read: if isMonitor()
