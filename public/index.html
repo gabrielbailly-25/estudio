@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Estudio Dirigido · Glera</title>
+  <meta name="description" content="Comunicación entre familias y monitores de la actividad de Estudio Dirigido de la Asociación Juvenil Glera.">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0a66c2">
+  <link rel="stylesheet" href="/css/styles.css">
+  <!-- Firebase JS SDK v10 mediante ES modules (sin compilación) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js",
+      "firebase/messaging": "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js"
+    }
+  }
+  </script>
+</head>
+<body class="logged-out">
+  <!-- Cabecera de la app (oculta en el login) -->
+  <header id="appheader">
+    <div class="brand">📚 Estudio Dirigido <span>Glera</span></div>
+    <button id="btn-bell" data-action="go" data-screen="notifications" aria-label="Notificaciones">
+      🔔<span id="notif-badge" class="badge hidden"></span>
+    </button>
+  </header>
+
+  <main id="app">
+    <!-- Acceso -->
+    <section id="screen-login" class="screen active">
+      <div class="login-wrap">
+        <div class="login-logo">📚</div>
+        <h1>Estudio Dirigido</h1>
+        <p class="muted">Asociación Juvenil Glera</p>
+        <div id="config-warning" class="warning hidden">
+          ⚠️ Falta configurar Firebase.<br>Sigue el paso 5 del README.md
+          (<code>public/js/firebase-config.js</code>).
+        </div>
+        <button id="btn-google" class="btn google">
+          <span class="g">G</span> Continuar con Google
+        </button>
+        <p class="tiny muted">Acceso para familias y monitores de la actividad.</p>
+      </div>
+    </section>
+
+    <!-- El resto de pantallas las rellena app.js -->
+    <section id="screen-home" class="screen"><div id="home-content"></div></section>
+    <section id="screen-attendance" class="screen"><div id="attendance-content"></div></section>
+    <section id="screen-evaluate" class="screen"><div id="evaluate-content"></div></section>
+    <section id="screen-progress" class="screen"><div id="progress-content"></div></section>
+    <section id="screen-reports" class="screen"><div id="reports-content"></div></section>
+    <section id="screen-reportDetail" class="screen"><div id="report-detail-content"></div></section>
+    <section id="screen-reportCompose" class="screen"><div id="report-compose-content"></div></section>
+    <section id="screen-chatList" class="screen"><div id="chat-list-content"></div></section>
+    <section id="screen-chatView" class="screen"><div id="chat-view-content"></div></section>
+    <section id="screen-auths" class="screen"><div id="auths-content"></div></section>
+    <section id="screen-authDetail" class="screen"><div id="auth-detail-content"></div></section>
+    <section id="screen-authCompose" class="screen"><div id="auth-compose-content"></div></section>
+    <section id="screen-noticeCompose" class="screen"><div id="notice-compose-content"></div></section>
+    <section id="screen-calendar" class="screen"><div id="calendar-content"></div></section>
+    <section id="screen-notifications" class="screen"><div id="notifications-content"></div></section>
+    <section id="screen-profile" class="screen"><div id="profile-content"></div></section>
+    <section id="screen-more" class="screen"><div id="more-content"></div></section>
+  </main>
+
+  <!-- Navegación inferior (la rellena app.js según el rol) -->
+  <nav id="bottomnav"></nav>
+
+  <!-- Avisos dentro de la app -->
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

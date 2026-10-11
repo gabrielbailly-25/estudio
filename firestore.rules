@@ -1,0 +1,137 @@
+rules_version = '2';
+
+// Reglas de seguridad de la app Estudio Dirigido Glera.
+// Roles: admin, monitor, familia (campo `role` en users/{uid}).
+// - Las familias solo leen los datos de sus hijos vinculados
+//   (students con array `familyUids` que contiene su uid).
+// - Los monitores leen/escriben asistencia, evaluaciones, informes, avisos y autorizaciones.
+// - El admin puede con todo.
+// El primer usuario que entra se crea con rol "familia"; el admin se asigna a mano (ver README).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Funciones auxiliares ----------
+    function signedIn() {
+      return request.auth != null;
+    }
+    function myUid() {
+      return request.auth.uid;
+    }
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(myUid())).data.role;
+    }
+    function isAdmin() {
+      return signedIn() && myRole() == 'admin';
+    }
+    function isMonitor() {
+      return signedIn() && (myRole() == 'monitor' || myRole() == 'admin');
+    }
+    function isFamilia() {
+      return signedIn() && myRole() == 'familia';
+    }
+    // ¿El usuario actual es familia vinculada al alumno?
+    function isFamilyOf(studentId) {
+      return myUid() in get(/databases/$(database)/documents/students/$(studentId)).data.familyUids;
+    }
+
+    // ---------- Usuarios ----------
+    match /users/{uid} {
+      // Cada uno lee su ficha; los monitores pueden ver la lista para gestionar.
+      allow read: if signedIn() && (myUid() == uid || isMonitor());
+      // Al registrarse, el usuario crea su propia ficha siempre como "familia".
+      allow create: if signedIn() && myUid() == uid
+                    && request.resource.data.role == 'familia';
+      // No puede cambiarse el rol a sí mismo (lo hace un admin desde la consola).
+      allow update: if signedIn() && myUid() == uid
+                    && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+
+      // Tokens push del propio dispositivo.
+      match /pushTokens/{tokenId} {
+        allow read, write: if signedIn() && myUid() == uid;
+      }
+      // Centro de notificaciones: lo escribe el backend (Functions).
+      // El usuario solo puede marcarlas como leídas.
+      match /notifications/{notifId} {
+        allow read: if signedIn() && myUid() == uid;
+        allow update: if signedIn() && myUid() == uid
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow create, delete: if false;
+      }
+    }
+
+    // ---------- Alumnos ----------
+    match /students/{studentId} {
+      allow read: if isMonitor()
+                  || (isFamilia() && myUid() in resource.data.familyUids);
+      allow write: if isMonitor();
+    }
+
+    // ---------- Sesiones de Estudio Dirigido (calendario) ----------
+    match /sessions/{sessionId} {
+      allow read: if signedIn();
+      allow write: if isMonitor();
+    }
+
+    // ---------- Asistencia diaria ----------
+    match /attendance/{attId} {
+      allow read: if isMonitor()
+                  || (isFamilia() && isFamilyOf(resource.data.studentId));
+      allow create, update: if isMonitor();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Evaluación diaria ----------
+    match /evaluations/{evalId} {
+      allow read: if isMonitor()
+                  || (isFamilia() && isFamilyOf(resource.data.studentId));
+      allow create, update: if isMonitor();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Informes (mensuales) ----------
+    match /reports/{reportId} {
+      allow read: if isMonitor()
+                  || (isFamilia() && isFamilyOf(resource.data.studentId));
+      allow create, update: if isMonitor();
+      allow delete: if isAdmin();
+    }
+
+    // ---------- Avisos / tablón de anuncios ----------
+    match /notices/{noticeId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isMonitor();
+    }
+
+    // ---------- Autorizaciones ----------
+    match /authorizations/{authId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isMonitor();
+      // Cada familia firma con su propio uid.
+      match /signatures/{uid} {
+        allow read: if signedIn();
+        allow create: if signedIn() && myUid() == uid;
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------- Conversaciones de chat ----------
+    match /conversations/{convId} {
+      allow read: if signedIn() && myUid() in resource.data.participantUids;
+      allow create: if isMonitor();
+      allow update: if signedIn() && myUid() in resource.data.participantUids;
+      allow delete: if false;
+    }
+
+    // ---------- Mensajes de chat ----------
+    match /messages/{msgId} {
+      allow read: if signedIn() && myUid() in resource.data.participantUids;
+      // Solo un participante puede escribir, y siempre como él mismo.
+      allow create: if signedIn()
+                    && myUid() in request.resource.data.participantUids
+                    && request.resource.data.senderUid == myUid();
+      allow update, delete: if false;
+    }
+  }
+}

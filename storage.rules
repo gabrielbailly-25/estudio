@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// Reglas de Storage de la app Estudio Dirigido Glera.
+// - users/{uid}/... : archivos propios de cada usuario (p. ej. foto de perfil).
+// - shared/...      : adjuntos de avisos e informes; solo monitores/admin suben.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Carpeta personal de cada usuario (máx. 5 MB por archivo).
+    match /users/{uid}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // Adjuntos compartidos (avisos, informes): solo monitores y admin.
+    match /shared/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && get(/databases/(default)/documents/users/$(request.auth.uid)).data.role in ['monitor', 'admin'];
+    }
+
+    // Por defecto, denegar todo lo demás.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
