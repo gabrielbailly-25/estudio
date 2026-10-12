@@ -7,7 +7,7 @@
 import { firebaseConfig, vapidKey } from './firebase-config.js';
 import { initializeApp } from 'firebase/app';
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged
 } from 'firebase/auth';
 import {
   getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField,
@@ -283,10 +283,18 @@ function initFirebase() {
 
 $('btn-google').addEventListener('click', async () => {
   if (!auth) { toast('Configura Firebase primero (ver README.md).'); return; }
+  const provider = new GoogleAuthProvider();
+  // En móvil los popups suelen estar bloqueados: usa redirección.
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   try {
-    await signInWithPopup(auth, new GoogleAuthProvider());
+    if (isMobile) await signInWithRedirect(auth, provider);
+    else await signInWithPopup(auth, provider);
   } catch (err) {
     console.error(err);
+    // Si el popup falla, intenta con redirección.
+    if (!isMobile && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user')) {
+      try { await signInWithRedirect(auth, provider); return; } catch (e) { console.error(e); }
+    }
     toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
   }
 });
@@ -2427,6 +2435,10 @@ Object.assign(RENDER, {
 
 // Arranque: si hay configuración válida, se vigila la sesión; si no, se avisa en el login.
 if (initFirebase()) {
+  // Recoge el resultado si volvemos de un login con redirección (móvil).
+  getRedirectResult(auth).catch(err => {
+    if (err && err.code !== 'auth/no-auth-event') console.error('Redirect login:', err);
+  });
   watchAuth();
 } else {
   setLoggedOut(true);
