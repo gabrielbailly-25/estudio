@@ -1,5 +1,5 @@
 // ============================================================
-// App Estudio Dirigido Glera — MVP
+// App Studio sistema — MVP
 // Lógica principal: Firebase Auth (Google), Firestore y Cloud Messaging.
 // Todo el texto de la interfaz está en español.
 // ============================================================
@@ -362,7 +362,7 @@ const noticeCard = (n) => {
       </div>
       <h4>${esc(n.title)}</h4>
       <p class="muted">${esc(n.body)}</p>
-      <div class="meta">${tsToDate(n.createdAt)} · Equipo de Estudio Dirigido</div>
+      <div class="meta">${tsToDate(n.createdAt)} · Equipo de Studio sistema</div>
       ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
         <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
         <button class="text-btn" data-action="delete-notice" data-id="${n.id}" style="color:var(--danger)">🗑️ Eliminar</button>
@@ -421,7 +421,7 @@ async function renderHome() {
   const nombre = (state.profile.displayName || '').split(' ')[0] || (fam ? 'familia' : 'monitor');
   const child = fam ? (state.children.find(x => x.id === state.selectedChildId) || state.children[0]) : null;
   const subtitulo = fam
-    ? (child ? `Este es el resumen de ${esc(child.firstName)} para hoy.` : 'Bienvenido/a a Estudio Dirigido.')
+    ? (child ? `Este es el resumen de ${esc(child.firstName)} para hoy.` : 'Bienvenido/a a Studio sistema.')
     : `${state.students.length} alumno(s) en la actividad.`;
 
   // Último aviso del tablón (fijados primero, como en la lista).
@@ -540,7 +540,7 @@ async function renderHome() {
           <span class="badge">${latest.pinned ? 'Fijado · ' : ''}Último aviso</span>
           <h3>${esc(latest.title)}</h3>
           <p>${esc(latest.body)}</p>
-          <div class="notice-meta"><span>Equipo de Estudio Dirigido</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
+          <div class="notice-meta"><span>Equipo de Studio sistema</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
         </article>` : emptyBox('📋', 'Aún no hay avisos en el tablón.')}
       </div>
       <div class="col-4"><div class="card">
@@ -847,7 +847,7 @@ async function renderChild() {
       <div>
         ${child.group ? `<span class="tag">${esc(child.group)}</span>` : ''}
         <h2>${esc(child.firstName)} ${esc(child.lastName || '')}</h2>
-        <p class="muted" style="margin:4px 0 0">Estudio Dirigido · Curso 2026–2027</p>
+        <p class="muted" style="margin:4px 0 0">Studio sistema · Curso 2026–2027</p>
       </div>
       <button class="btn secondary" data-action="contact-monitor">Escribir al monitor</button>
     </div>
@@ -1821,8 +1821,8 @@ function renderMore() {
         <span class="menu-label">${i.label}</span><b>›</b>
       </button>`).join('') + `</div>
     <div class="card" style="margin-top:16px">
-      <span class="tag tag-info">Estudio Dirigido</span>
-      <h3 style="margin:10px 0 6px">Estudio Dirigido · Glera</h3>
+      <span class="tag tag-info">Studio sistema</span>
+      <h3 style="margin:10px 0 6px">Studio sistema</h3>
       <p class="muted" style="margin:0">Asociación Juvenil Glera · Curso 2026–2027</p>
     </div>`;
 }
