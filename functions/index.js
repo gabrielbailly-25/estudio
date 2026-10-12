@@ -32,13 +32,21 @@ async function saveNotification(uid, { type, title, body }) {
 
 // Envía push FCM a todos los tokens registrados del usuario.
 // Los tokens inválidos se eliminan para no reintentarlos.
+// Incluye el número de no leídas para el globo del icono de la app.
 async function sendPush(uid, { title, body }) {
   const snap = await db.collection('users').doc(uid).collection('pushTokens').get();
   const tokens = snap.docs.map((d) => d.data().token).filter(Boolean);
   if (!tokens.length) return;
+  let unread = 0;
+  try {
+    const c = await db.collection('users').doc(uid).collection('notifications')
+      .where('read', '==', false).count().get();
+    unread = c.data().count;
+  } catch (e) { /* sin conteo */ }
   const res = await messaging.sendEachForMulticast({
     tokens,
     notification: { title, body: body || '' },
+    data: { unreadCount: String(unread) },
   });
   // Limpia los tokens que Firebase ya no acepta.
   const dead = [];
