@@ -15,6 +15,7 @@ import {
   onSnapshot, serverTimestamp, arrayUnion
 } from 'firebase/firestore';
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'firebase/messaging';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 /* ---------------- Estado global ---------------- */
 const state = {
@@ -1205,6 +1206,11 @@ async function renderReports() {
             <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde">
             <label for="rp-body">Valoración para la familia</label>
             <textarea id="rp-body" placeholder="Cómo ha ido la sesión, qué reforzar…"></textarea>
+            <div id="rp-attach-wrap">
+              <label for="rp-attach">Documento adjunto (Word o PDF, solo informe mensual)</label>
+              <input type="file" id="rp-attach" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+              <p class="meta">Opcional. Máx. 10 MB.</p>
+            </div>
             <div class="row" style="margin-top:12px;gap:8px">
               <button class="btn secondary" data-action="preview-report" style="flex:1">Previsualizar</button>
               <button class="btn" data-action="publish-report2" style="flex:1">Publicar y avisar</button>
@@ -1231,6 +1237,11 @@ async function renderReports() {
     $('reports-list').innerHTML = msnap.empty
       ? emptyBox('📄', 'Aún no hay informes.')
       : msnap.docs.map(d => reportCard(d.id, d.data())).join('');
+    // El adjunto solo se muestra para informes mensuales.
+    const typeSel = $('rp-type'), attachWrap = $('rp-attach-wrap');
+    const toggleAttach = () => { attachWrap.style.display = typeSel.value === 'mensual' ? '' : 'none'; };
+    typeSel.addEventListener('change', toggleAttach);
+    toggleAttach();
   } else {
     if (!state.children.length) {
       c.innerHTML = `<h2>Informes</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
@@ -1294,6 +1305,11 @@ const reportDateBlock = (r) => {
   return `<span class="date-block"><b>${day}</b><small>${mon}</small></span>`;
 };
 
+const reportAttachmentHTML = (r) => r.attachmentUrl ? `
+  <a class="attach-link" href="${esc(r.attachmentUrl)}" target="_blank" rel="noopener">
+    📎 ${esc(r.attachmentName || 'Documento adjunto')}
+  </a>` : '';
+
 const reportCardExpand = (id, r) => {
   const tipo = reportType(r);
   const open = state.openReportId === id;
@@ -1311,6 +1327,7 @@ const reportCardExpand = (id, r) => {
     <div class="report-body">
       <h5>Resumen</h5>
       <p style="white-space:pre-wrap">${esc(r.body)}</p>
+      ${reportAttachmentHTML(r)}
       <div class="meta">Enviado ${tsToDate(r.createdAt)}</div>
       <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al profesor →</button>
     </div>` : ''}
@@ -1335,7 +1352,8 @@ function showReportDetail(r) {
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
     <div class="meta">${r.type ? `<span class="tag">${r.type === 'mensual' ? 'Mensual' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
-    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p></div>`;
+    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p>
+      ${reportAttachmentHTML(r)}</div>`;
   show('reportDetail');
 }
 ACTIONS['open-report'] = async (d) => {
@@ -1361,10 +1379,31 @@ ACTIONS['publish-report2'] = async () => {
   const body = $('rp-body').value.trim();
   if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
   if (!title || !body) { toast('Escribe un título y el texto del informe.'); return; }
+  const type = $('rp-type').value;
+  // Sube el adjunto si lo hay (solo mensual).
+  let attachmentUrl = null, attachmentName = null;
+  const fileInput = $('rp-attach');
+  if (type === 'mensual' && fileInput && fileInput.files.length) {
+    const file = fileInput.files[0];
+    if (file.size > 10 * 1024 * 1024) { toast('El archivo supera los 10 MB.'); return; }
+    try {
+      toast('Subiendo documento…');
+      const storage = getStorage(app);
+      const path = `shared/reports/${studentId}_${Date.now()}_${file.name}`;
+      const snap = await uploadBytes(storageRef(storage, path), file);
+      attachmentUrl = await getDownloadURL(snap.ref);
+      attachmentName = file.name;
+    } catch (err) {
+      console.error(err);
+      toast('No se pudo subir el documento.');
+      return;
+    }
+  }
   await addDoc(collection(db, 'reports'), {
     studentId, title, body,
-    type: $('rp-type').value,
+    type,
     month: $('rp-month').value || null,
+    attachmentUrl, attachmentName,
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
   });
   toast('Informe publicado. La familia recibirá un aviso.');
