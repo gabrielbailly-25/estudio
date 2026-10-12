@@ -12,7 +12,7 @@ import {
 import {
   getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField,
   collection, query, where, orderBy, limit, getDocs,
-  onSnapshot, serverTimestamp
+  onSnapshot, serverTimestamp, arrayUnion
 } from 'firebase/firestore';
 import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'firebase/messaging';
 
@@ -92,6 +92,13 @@ const fmtMonth = (ym) => {
   if (!ym) return '';
   const [y, m] = ym.split('-');
   return `${MESES_LARGO[parseInt(m, 10) - 1]} de ${y}`;
+};
+const DIAS_LARGO = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const fmtDateLong = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number);
+  const wd = DIAS_LARGO[new Date(y, m - 1, d).getDay()];
+  return `${wd[0].toUpperCase() + wd.slice(1)} ${d} de ${MESES_LARGO[m - 1]}`;
 };
 const tsToDate = (ts) => {
   try {
@@ -341,32 +348,71 @@ async function loadRoster() {
 
 /* ---------------- Tablón de anuncios ---------------- */
 // Tarjeta de aviso; los monitores ven Editar y Eliminar.
-const noticeCard = (n) => `
-  <div class="card">
-    ${n.pinned ? '<span class="pinned-tag">📌 Fijado</span>' : ''}
-    <h3>${esc(n.title)}</h3>
-    <p>${esc(n.body)}</p>
-    <div class="meta">${tsToDate(n.createdAt)}</div>
-    ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
-      <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
-      <button class="text-btn" data-action="delete-notice" data-id="${n.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+const noticeCard = (n) => {
+  const read = (n.readBy || []).includes(state.user.uid);
+  const fam = !isMonitor();
+  return `
+  <article class="card notice-card ${n.pinned ? 'pinned' : ''}">
+    ${!read && fam ? '<span class="unread-dot"></span>' : ''}
+    <span class="notif-ico">🔔</span>
+    <div class="notif-main">
+      <div class="notif-tags">
+        ${n.pinned ? '<span class="tag tag-unread">Fijado</span>' : ''}
+      </div>
+      <h4>${esc(n.title)}</h4>
+      <p class="muted">${esc(n.body)}</p>
+      <div class="meta">${tsToDate(n.createdAt)} · Equipo de Estudio Dirigido</div>
+      ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
+        <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
+        <button class="text-btn" data-action="delete-notice" data-id="${n.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+      </div>` : ''}
+    </div>
+    ${fam ? `<div class="notice-side">
+      ${read
+        ? '<span class="tag tag-read">Leído</span>'
+        : `<button class="btn small" data-action="confirm-notice-read" data-id="${n.id}">Confirmar lectura</button>`}
+      <button class="text-btn" data-action="contact-monitor">Responder</button>
     </div>` : ''}
-  </div>`;
+  </article>`;
+};
 
 // Pantalla "Avisos": el tablón completo.
 async function renderNotices() {
   const c = $('notices-content');
   const snap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
-  const notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let notices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   notices.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  const f = state.noticeFilter || 'all';
+  if (f === 'unread') notices = notices.filter(n => !(n.readBy || []).includes(state.user.uid));
+  if (f === 'pinned') notices = notices.filter(n => n.pinned);
   c.innerHTML = `
-    <div class="screen-head"><h2>Tablón de anuncios</h2>
+    <div class="screen-head"><h2>Avisos</h2>
       ${isMonitor() ? `<button class="btn small" data-action="new-notice">+ Publicar</button>` : ''}
     </div>
+    <div class="filters">
+      <button class="filter ${f === 'all' ? 'active' : ''}" data-action="notice-filter" data-f="all">Todos</button>
+      <button class="filter ${f === 'unread' ? 'active' : ''}" data-action="notice-filter" data-f="unread">Sin leer</button>
+      <button class="filter ${f === 'pinned' ? 'active' : ''}" data-action="notice-filter" data-f="pinned">Fijados</button>
+    </div>
+    <div class="section-head" style="margin-top:16px"><div>
+      <h3>Tablón de anuncios</h3>
+      <p class="muted">Los avisos nuevos y fijados aparecen destacados.</p>
+    </div></div>
     <div class="grid"><div class="col-12">
-      ${notices.length ? notices.map(noticeCard).join('') : emptyBox('📋', 'Aún no hay avisos en el tablón.')}
+      ${notices.length ? notices.map(noticeCard).join('') : emptyBox('📋', 'No hay avisos.')}
     </div></div>`;
 }
+ACTIONS['notice-filter'] = (d) => { state.noticeFilter = d.f; renderNotices(); };
+ACTIONS['confirm-notice-read'] = async (d) => {
+  try {
+    await updateDoc(doc(db, 'notices', d.id), { readBy: arrayUnion(state.user.uid) });
+    toast('Lectura confirmada.');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo confirmar.');
+  }
+  renderNotices();
+};
 
 async function renderHome() {
   const c = $('home-content');
@@ -629,17 +675,94 @@ ACTIONS['save-attendance'] = async () => {
 
 async function loadAttendanceHistory() {
   const box = $('att-history');
+  const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
+  const ym = state.attMonth || todayStr().slice(0, 7);
+  const [y, m] = ym.split('-').map(Number);
   const snap = await getDocs(query(collection(db, 'attendance'),
-    where('studentId', '==', state.selectedChildId), orderBy('date', 'desc'), limit(60)));
-  if (snap.empty) { box.innerHTML = emptyBox('✅', 'Aún no hay registros de asistencia.'); return; }
-  box.innerHTML = snap.docs.map(d => {
-    const a = d.data();
-    return `<div class="card"><div class="row">
-      <strong>${fmtDate(a.date)}</strong>
-      <span class="tag ${a.status}">${a.status}</span>
-    </div></div>`;
-  }).join('');
+    where('studentId', '==', state.selectedChildId),
+    where('date', '>=', `${ym}-01`), where('date', '<=', `${ym}-31`)));
+  const byDate = {};
+  snap.docs.forEach(d => { byDate[d.data().date] = d.data().status; });
+  const dates = Object.keys(byDate).sort();
+  const nPres = dates.filter(d => byDate[d] === 'presente').length;
+  const nAus = dates.filter(d => byDate[d] === 'ausente').length;
+  const nJus = dates.filter(d => byDate[d] === 'justificado').length;
+  const total = dates.length;
+  const pct = total ? Math.round(nPres / total * 100) : 0;
+
+  // Calendario del mes.
+  const first = new Date(y, m - 1, 1);
+  const startDay = (first.getDay() + 6) % 7; // lunes = 0
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const prevDays = new Date(y, m - 1, 0).getDate();
+  let cells = '';
+  for (let i = startDay - 1; i >= 0; i--) {
+    cells += `<span class="cal-day other">${prevDays - i}</span>`;
+  }
+  const today = todayStr();
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${ym}-${String(d).padStart(2, '0')}`;
+    const st = byDate[ds];
+    const isToday = ds === today;
+    cells += `<span class="cal-day ${isToday ? 'today' : ''}">${d}${st ? `<i class="cal-dot ${st}"></i>` : ''}</span>`;
+  }
+  const endFill = (7 - ((startDay + daysInMonth) % 7)) % 7;
+  for (let d = 1; d <= endFill; d++) cells += `<span class="cal-day other">${d}</span>`;
+
+  const statusLabel = { presente: 'Presente', ausente: 'Ausente', justificado: 'Justificado' };
+  box.innerHTML = `
+  <div class="grid">
+    <div class="col-7">
+      <div class="card">
+        <div class="cal-head">
+          <button class="expand-btn" data-action="att-month" data-dir="-1" aria-label="Mes anterior">‹</button>
+          <h3 style="margin:0">${MESES_LARGO[m - 1][0].toUpperCase() + MESES_LARGO[m - 1].slice(1)} ${y}</h3>
+          <button class="expand-btn" data-action="att-month" data-dir="1" aria-label="Mes siguiente">›</button>
+        </div>
+        <div class="cal-grid">
+          ${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(w => `<span class="cal-wd">${w}</span>`).join('')}
+          ${cells}
+        </div>
+        <div class="cal-legend">
+          <span><i class="cal-dot presente"></i>Presente</span>
+          <span><i class="cal-dot ausente"></i>Ausente</span>
+          <span><i class="cal-dot justificado"></i>Justificado</span>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Historial de ${esc(child.firstName)}</h3>
+        ${dates.length ? [...dates].reverse().map(ds => `
+          <div class="history-line">
+            <div><strong>${fmtDateLong(ds)}</strong></div>
+            <span class="tag ${byDate[ds]}">${statusLabel[byDate[ds]]}</span>
+          </div>`).join('')
+        : emptyBox('✅', 'Aún no hay registros de asistencia.')}
+      </div>
+    </div>
+    <div class="col-5">
+      <div class="card att-summary">
+        <div class="row" style="justify-content:space-between"><span style="font-size:28px">👤✓</span><small class="muted">${MESES_LARGO[m - 1][0].toUpperCase() + MESES_LARGO[m - 1].slice(1)}</small></div>
+        <div class="att-pct">${pct}%</div>
+        <p class="muted" style="margin:0">${nPres} de ${total} sesiones</p>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>Resumen</h3>
+        <div class="history-line"><span>Presente</span><b style="color:var(--brand)">${nPres}</b></div>
+        <div class="history-line"><span>Ausencia justificada</span><b style="color:var(--accent)">${nJus}</b></div>
+        <div class="history-line"><span>Ausente</span><b style="color:var(--danger)">${nAus}</b></div>
+      </div>
+    </div>
+  </div>`;
 }
+ACTIONS['att-month'] = (d) => {
+  const ym = state.attMonth || todayStr().slice(0, 7);
+  let [y, m] = ym.split('-').map(Number);
+  m += parseInt(d.dir, 10);
+  if (m < 1) { m = 12; y--; }
+  if (m > 12) { m = 1; y++; }
+  state.attMonth = `${y}-${String(m).padStart(2, '0')}`;
+  loadAttendanceHistory();
+};
 
 /* ---------------- Evaluación diaria (monitor) / Progreso (familia) ---------------- */
 
@@ -960,8 +1083,13 @@ async function renderReports() {
       c.innerHTML = `<h2>Informes</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
       return;
     }
+    const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
     const f = state.reportFilter || 'all';
-    c.innerHTML = `<h2>Informes</h2>
+    c.innerHTML = `
+      <div class="screen-head"><div>
+        <h2>Informes de ${esc(child.firstName)}</h2>
+        <p class="muted">Consulta el seguimiento diario y los informes mensuales enviados por el monitor.</p>
+      </div></div>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
       <div class="filters">
         <button class="filter ${f === 'all' ? 'active' : ''}" data-action="report-filter" data-f="all">Todos</button>
@@ -989,10 +1117,57 @@ async function loadReports() {
   let docs = snap.docs;
   const f = state.reportFilter || 'all';
   if (f !== 'all') docs = docs.filter(d => reportType(d.data()) === f);
+  // Contador de guardados.
+  const head = box.parentElement && box.parentElement.querySelector('.screen-head');
+  if (head && !head.querySelector('.save-count')) {
+    const b = document.createElement('span');
+    b.className = 'badge info save-count';
+    head.appendChild(b);
+  }
+  const badge = box.parentElement && box.parentElement.querySelector('.save-count');
+  if (badge) badge.textContent = `${docs.length} guardado${docs.length === 1 ? '' : 's'}`;
   box.innerHTML = docs.length
-    ? docs.map(d => reportCard(d.id, d.data())).join('')
+    ? docs.map(d => reportCardExpand(d.id, d.data())).join('')
     : emptyBox('📄', f === 'all' ? 'Aún no hay informes.' : 'No hay informes de este tipo.');
 }
+
+const reportDateBlock = (r) => {
+  let day = '—', mon = '';
+  try {
+    const dt = r.createdAt.toDate();
+    day = String(dt.getDate()).padStart(2, '0');
+    mon = MESES_CORTO[dt.getMonth()].toUpperCase();
+  } catch { /* sin fecha */ }
+  return `<span class="date-block"><b>${day}</b><small>${mon}</small></span>`;
+};
+
+const reportCardExpand = (id, r) => {
+  const tipo = reportType(r);
+  const open = state.openReportId === id;
+  return `
+  <article class="card report-card">
+    <div class="report-head" data-action="toggle-report" data-id="${id}">
+      ${reportDateBlock(r)}
+      <div class="report-main">
+        <span class="tag ${tipo === 'mensual' ? 'tag-info' : 'tag-diario'}">${tipo === 'mensual' ? 'Mensual' : 'Diario'}</span>
+        <h4>${esc(r.title)}</h4>
+      </div>
+      <button class="expand-btn" aria-label="${open ? 'Contraer' : 'Expandir'}">${open ? '–' : '+'}</button>
+    </div>
+    ${open ? `
+    <div class="report-body">
+      <h5>Resumen</h5>
+      <p style="white-space:pre-wrap">${esc(r.body)}</p>
+      <div class="meta">Enviado ${tsToDate(r.createdAt)}</div>
+      <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al monitor →</button>
+    </div>` : ''}
+  </article>`;
+};
+
+ACTIONS['toggle-report'] = (d) => {
+  state.openReportId = state.openReportId === d.id ? null : d.id;
+  loadReports();
+};
 
 function showReportDetail(r) {
   const dateStr = r._preview ? 'Ahora mismo' : tsToDate(r.createdAt);
@@ -1071,20 +1246,39 @@ async function renderChatList() {
   const snap = await getDocs(query(collection(db, 'conversations'),
     where('participantUids', 'array-contains', state.user.uid),
     orderBy('updatedAt', 'desc'), limit(30)));
+  state.conversations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   c.innerHTML = `
     <div class="screen-head"><h2>Chat</h2>
       ${isMonitor() ? `<button class="btn small" data-action="new-conversation">+ Nueva</button>` : ''}
-    </div><div id="conv-list"></div>`;
-  const box = $('conv-list');
-  if (snap.empty) { box.innerHTML = emptyBox('💬', 'Aún no hay conversaciones.'); return; }
-  box.innerHTML = snap.docs.map(d => {
-    const v = d.data();
-    return `<div class="card chat-list-item" data-action="open-chat" data-id="${d.id}">
-      <div class="row"><strong>${esc(v.studentName || 'Conversación')}</strong>
-        <span class="meta">${v.updatedAt ? tsToDate(v.updatedAt) : ''}</span></div>
-      <p class="muted">${esc(v.lastMessageText || 'Sin mensajes todavía.')}</p>
+    </div>
+    <div class="chat-layout">
+      <div class="chat-sidebar">
+        <input type="search" id="conv-search" placeholder="Buscar conversación" autocomplete="off">
+        <div id="conv-list"></div>
+      </div>
+      <div class="chat-main" id="chat-main">
+        ${emptyBox('💬', 'Elige una conversación para empezar.')}
+      </div>
     </div>`;
-  }).join('');
+  const renderList = (filter = '') => {
+    const box = $('conv-list');
+    const items = state.conversations.filter(v =>
+      (v.studentName || 'Conversación').toLowerCase().includes(filter.toLowerCase()));
+    box.innerHTML = items.length ? items.map(v => `
+      <div class="conv-item ${state.currentConvId === v.id ? 'active' : ''}" data-action="open-chat" data-id="${v.id}">
+        <span class="avatar-sm">${esc(initialsOf(v.studentName || '?'))}</span>
+        <div class="conv-main">
+          <div class="row"><strong>${esc(v.studentName || 'Conversación')}</strong>
+            <span class="meta">${v.updatedAt ? tsToDate(v.updatedAt) : ''}</span></div>
+          <p class="muted">${esc(v.lastMessageText || 'Sin mensajes todavía.')}</p>
+        </div>
+      </div>`).join('')
+      : emptyBox('💬', 'Aún no hay conversaciones.');
+  };
+  renderList();
+  $('conv-search').addEventListener('input', (e) => renderList(e.target.value));
+  // En escritorio, reabre la conversación activa.
+  if (state.currentConvId && window.innerWidth > 900) openChat(state.currentConvId, true);
 }
 
 // El monitor elige un alumno y se abre un chat 1 a 1 con sus familias.
@@ -1141,21 +1335,33 @@ ACTIONS['contact-monitor'] = async () => {
   openChat(ref.id);
 };
 
-async function openChat(convId) {
+async function openChat(convId, inline = false) {
   state.currentConvId = convId;
   const csnap = await getDoc(doc(db, 'conversations', convId));
   const conv = csnap.data() || {};
-  $('chat-view-content').innerHTML = `
-    <button class="back" data-action="go" data-screen="chatList">‹ Chats</button>
-    <h2>${esc(conv.studentName || 'Conversación')}</h2>
-    <div class="chat-view">
-      <div class="messages" id="chat-messages"></div>
-      <div class="chat-input">
-        <input type="text" id="chat-text" placeholder="Escribe un mensaje…" maxlength="500" autocomplete="off">
-        <button class="btn" data-action="send-message">Enviar</button>
-      </div>
-    </div>`;
-  show('chatView');
+  const otherName = conv.studentName || 'Conversación';
+  const desktop = window.innerWidth > 900;
+  const chatHTML = `
+    <div class="chat-header">
+      ${desktop ? '' : `<button class="back" data-action="go" data-screen="chatList">‹</button>`}
+      <span class="avatar-sm">${esc(initialsOf(otherName))}</span>
+      <div><strong>${esc(otherName)}</strong>
+        <div class="meta">Sobre ${esc(conv.studentName || '')}</div></div>
+    </div>
+    <div class="messages" id="chat-messages"></div>
+    <div class="chat-input">
+      <input type="text" id="chat-text" placeholder="Escribe un mensaje…" maxlength="500" autocomplete="off">
+      <button class="send-btn" data-action="send-message" aria-label="Enviar">➤</button>
+    </div>
+    <p class="meta" style="text-align:center;margin:8px 0 0">Canal entre monitor y familia, sin compartir teléfonos personales.</p>`;
+  if (desktop && $('chat-main')) {
+    $('chat-main').innerHTML = chatHTML;
+    document.querySelectorAll('.conv-item').forEach(el =>
+      el.classList.toggle('active', el.dataset.id === convId));
+  } else {
+    $('chat-view-content').innerHTML = chatHTML;
+    show('chatView');
+  }
   // Escucha en tiempo real: los mensajes aparecen al instante.
   if (state.unsubChat) { state.unsubChat(); state.unsubChat = null; }
   state.unsubChat = onSnapshot(
@@ -1491,20 +1697,26 @@ ACTIONS['sign-out'] = async () => { await signOut(auth); };
 function renderMore() {
   const fam = !isMonitor();
   const items = [
-    ...(fam ? [{ id: 'child', label: 'Mi hijo', icon: 'child' }] : []),
+    ...(fam ? [{ id: 'child', label: 'Datos de mi hijo', icon: 'child' }] : []),
     { id: 'reports', label: 'Informes', icon: 'reports' },
-    ...(fam ? [{ id: 'notices', label: 'Avisos', icon: 'notices' }] : []),
-    { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
-    { id: 'calendar', label: 'Calendario', icon: 'calendar' },
     { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
-    { id: 'profile', label: 'Mi perfil', icon: 'profile' },
+    { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
+    ...(fam ? [{ id: 'progress', label: 'Evaluación diaria', icon: 'evaluate' }] : []),
+    { id: 'calendar', label: 'Calendario de sesiones', icon: 'calendar' },
+    { id: 'profile', label: 'Perfil y ajustes', icon: 'profile' },
   ];
   $('more-content').innerHTML = `
-    <div class="section-head"><h3>Más</h3></div>
+    <div class="screen-head"><h2>Más</h2></div>
     <div class="card menu-list">` + items.map(i =>
-      `<button class="menu-row" data-action="go" data-screen="${i.id}">
-        <span><span class="ico">${NAV_ICONS[i.icon]}</span>${i.label}</span><b>›</b>
-      </button>`).join('') + `</div>`;
+      `<button class="menu-row big" data-action="go" data-screen="${i.id}">
+        <span class="menu-ico">${NAV_ICONS[i.icon]}</span>
+        <span class="menu-label">${i.label}</span><b>›</b>
+      </button>`).join('') + `</div>
+    <div class="card" style="margin-top:16px">
+      <span class="tag tag-info">Estudio Dirigido</span>
+      <h3 style="margin:10px 0 6px">Estudio Dirigido · Glera</h3>
+      <p class="muted" style="margin:0">Asociación Juvenil Glera · Curso 2026–2027</p>
+    </div>`;
 }
 
 /* ---------------- Push: registro del token y mensajes en 1er plano ---------------- */
