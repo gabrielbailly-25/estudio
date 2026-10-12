@@ -426,6 +426,12 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 .report-body h5:first-child { margin-top: 0; }
 .tag-diario { background: var(--brand-soft); color: var(--brand); }
 .tag-info { background: var(--blue-soft); color: var(--blue); }
+.attach-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin: 8px 0; padding: 8px 12px; border-radius: 10px;
+  background: var(--surface-2); color: var(--brand);
+  font-weight: 700; text-decoration: none; font-size: 14px;
+}
 
 /* ---------- Cobertura de alertas ---------- */
 .coverage-pills { display: flex; gap: 8px; flex-wrap: wrap; }
