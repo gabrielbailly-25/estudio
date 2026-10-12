@@ -38,6 +38,7 @@ const state = {
 
 const isMonitor = () => state.role === 'monitor' || state.role === 'admin';
 const isAdmin = () => state.role === 'admin';
+const isFamilia = () => state.role === 'familia';
 const ROLE_LABEL = { admin: 'Administrador', monitor: 'Monitor/a', familia: 'Familia' };
 const initialsOf = (name) =>
   String(name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
@@ -679,10 +680,12 @@ async function loadAttendanceHistory() {
   const ym = state.attMonth || todayStr().slice(0, 7);
   const [y, m] = ym.split('-').map(Number);
   const snap = await getDocs(query(collection(db, 'attendance'),
-    where('studentId', '==', state.selectedChildId),
-    where('date', '>=', `${ym}-01`), where('date', '<=', `${ym}-31`)));
+    where('studentId', '==', state.selectedChildId), orderBy('date', 'desc'), limit(120)));
   const byDate = {};
-  snap.docs.forEach(d => { byDate[d.data().date] = d.data().status; });
+  snap.docs.forEach(d => {
+    const a = d.data();
+    if (a.date && a.date.slice(0, 7) === ym) byDate[a.date] = a.status;
+  });
   const dates = Object.keys(byDate).sort();
   const nPres = dates.filter(d => byDate[d] === 'presente').length;
   const nAus = dates.filter(d => byDate[d] === 'ausente').length;
@@ -1263,16 +1266,20 @@ async function renderChatList() {
   const renderList = (filter = '') => {
     const box = $('conv-list');
     const items = state.conversations.filter(v =>
-      (v.studentName || 'Conversación').toLowerCase().includes(filter.toLowerCase()));
-    box.innerHTML = items.length ? items.map(v => `
+      ((v.title || v.studentName) || 'Conversación').toLowerCase().includes(filter.toLowerCase()));
+    box.innerHTML = items.length ? items.map(v => {
+      const name = v.title || v.studentName || 'Conversación';
+      return `
       <div class="conv-item ${state.currentConvId === v.id ? 'active' : ''}" data-action="open-chat" data-id="${v.id}">
-        <span class="avatar-sm">${esc(initialsOf(v.studentName || '?'))}</span>
+        <span class="avatar-sm">${esc(initialsOf(name))}</span>
         <div class="conv-main">
-          <div class="row"><strong>${esc(v.studentName || 'Conversación')}</strong>
+          <div class="row"><strong>${esc(name)}</strong>
             <span class="meta">${v.updatedAt ? tsToDate(v.updatedAt) : ''}</span></div>
           <p class="muted">${esc(v.lastMessageText || 'Sin mensajes todavía.')}</p>
         </div>
-      </div>`).join('')
+        ${isMonitor() ? `<button class="text-btn" data-action="delete-conversation" data-id="${v.id}" style="color:var(--danger)" aria-label="Eliminar chat">🗑️</button>` : ''}
+      </div>`;
+    }).join('')
       : emptyBox('💬', 'Aún no hay conversaciones.');
   };
   renderList();
@@ -1281,21 +1288,57 @@ async function renderChatList() {
   if (state.currentConvId && window.innerWidth > 900) openChat(state.currentConvId, true);
 }
 
-// El monitor elige un alumno y se abre un chat 1 a 1 con sus familias.
-ACTIONS['new-conversation'] = () => {
+// El monitor/admin elige: chat sobre un alumno o chat directo con monitor/admin.
+ACTIONS['new-conversation'] = async () => {
   const box = $('conv-list');
   const opts = state.students.filter(s => (s.familyUids || []).length);
-  if (!opts.length) {
-    box.innerHTML = emptyBox('💬', 'Ningún alumno tiene familias vinculadas todavía.');
-    return;
-  }
+  let people = [];
+  try {
+    const role = isAdmin() ? 'monitor' : 'admin';
+    const usnap = await getDocs(query(collection(db, 'users'), where('role', '==', role), limit(20)));
+    people = usnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.id !== state.user.uid);
+  } catch (e) { console.error(e); }
+  const peopleLabel = isAdmin() ? 'Monitor/a' : 'Administrador';
   box.innerHTML = `<div class="card">
-    <label for="ncv-student">Alumno/a</label>
-    <select id="ncv-student">${opts.map(s =>
-      `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
-    <button class="btn block" data-action="create-conversation">Abrir conversación</button>
-    <button class="btn secondary block" data-action="go" data-screen="chatList">Cancelar</button>
+    <label>Chat directo con</label>
+    ${people.length ? `
+      <select id="ncv-person">
+        ${people.map(p => `<option value="${p.id}">${esc(p.displayName || p.email || 'Usuario')}</option>`).join('')}
+      </select>
+      <button class="btn block" data-action="create-direct-conversation" style="margin-top:8px">Abrir chat directo</button>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--line)">`
+    : `<p class="muted">No hay ${peopleLabel.toLowerCase()}s dados de alta.</p>`}
+    <label for="ncv-student">Chat sobre alumno/a (con sus familias)</label>
+    ${opts.length ? `
+      <select id="ncv-student">${opts.map(s =>
+        `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+      <button class="btn block" data-action="create-conversation" style="margin-top:8px">Abrir conversación</button>`
+    : `<p class="muted">Ningún alumno tiene familias vinculadas todavía.</p>`}
+    <button class="btn secondary block" data-action="go" data-screen="chatList" style="margin-top:8px">Cancelar</button>
   </div>`;
+};
+ACTIONS['create-direct-conversation'] = async () => {
+  const uid = $('ncv-person').value;
+  if (!uid) return;
+  const usnap = await getDoc(doc(db, 'users', uid));
+  const other = usnap.data() || {};
+  const otherName = other.displayName || other.email || 'Usuario';
+  // Reutiliza si ya existe un chat directo entre ambos.
+  const csnap = await getDocs(query(collection(db, 'conversations'),
+    where('participantUids', 'array-contains', state.user.uid),
+    orderBy('updatedAt', 'desc'), limit(30)));
+  const existing = csnap.docs.find(d => {
+    const p = d.data();
+    return p.direct === true && (p.participantUids || []).includes(uid);
+  });
+  if (existing) { openChat(existing.id); return; }
+  const ref = await addDoc(collection(db, 'conversations'), {
+    participantUids: [state.user.uid, uid],
+    direct: true,
+    title: 'Chat con ' + otherName,
+    lastMessageText: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  });
+  openChat(ref.id);
 };
 ACTIONS['create-conversation'] = async () => {
   const sid = $('ncv-student').value;
@@ -1309,6 +1352,62 @@ ACTIONS['create-conversation'] = async () => {
   openChat(ref.id);
 };
 ACTIONS['open-chat'] = (d) => openChat(d.id);
+ACTIONS['delete-conversation'] = async (d) => {
+  if (!confirm('¿Eliminar este chat? Se borrarán la conversación y todos sus mensajes.')) return;
+  try {
+    const msnap = await getDocs(query(collection(db, 'messages'),
+      where('conversationId', '==', d.id), limit(500)));
+    for (const m of msnap.docs) {
+      try { await deleteDoc(m.ref); } catch (e) { /* sigue */ }
+    }
+    await deleteDoc(doc(db, 'conversations', d.id));
+    if (state.currentConvId === d.id) state.currentConvId = null;
+    toast('Chat eliminado.');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo eliminar el chat.');
+  }
+  renderChatList();
+};
+
+// Borra TODOS los datos para empezar desde cero (solo admin).
+// Conserva únicamente el usuario administrador actual.
+ACTIONS['wipe-all-data'] = async () => {
+  const confirmation = prompt('Para borrar TODOS los datos escribe BORRAR:');
+  if (confirmation !== 'BORRAR') { toast('Cancelado.'); return; }
+  if (!confirm('¿Seguro? Se eliminarán alumnos, familias, chats, avisos, informes y todo lo demás.')) return;
+  toast('Borrando datos…');
+  try {
+    // Subcolecciones de autorizaciones (firmas) antes de borrar las autorizaciones.
+    const asnap = await getDocs(collection(db, 'authorizations'));
+    for (const a of asnap.docs) {
+      const ssnap = await getDocs(collection(db, 'authorizations', a.id, 'signatures'));
+      for (const s of ssnap.docs) { try { await deleteDoc(s.ref); } catch (e) {} }
+    }
+    // Colecciones principales.
+    for (const col of ['students', 'conversations', 'messages', 'notices', 'reports',
+                       'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems']) {
+      const snap = await getDocs(collection(db, col));
+      for (const d of snap.docs) { try { await deleteDoc(d.ref); } catch (e) {} }
+    }
+    // Usuarios: borra todos excepto el admin actual (con sus subcolecciones).
+    const usnap = await getDocs(collection(db, 'users'));
+    for (const u of usnap.docs) {
+      for (const sub of ['notifications', 'pushTokens']) {
+        const ssnap = await getDocs(collection(db, 'users', u.id, sub));
+        for (const s of ssnap.docs) { try { await deleteDoc(s.ref); } catch (e) {} }
+      }
+      if (u.id !== state.user.uid) { try { await deleteDoc(u.ref); } catch (e) {} }
+    }
+    toast('Todos los datos han sido eliminados.');
+  } catch (err) {
+    console.error(err);
+    toast('Error al borrar. Revisa qué datos quedan.');
+  }
+  // Recarga el estado local.
+  state.students = []; state.children = [];
+  renderUsers();
+};
 
 // La familia escribe al monitor: abre (o crea) la conversación con un monitor.
 ACTIONS['contact-monitor'] = async () => {
@@ -1339,14 +1438,15 @@ async function openChat(convId, inline = false) {
   state.currentConvId = convId;
   const csnap = await getDoc(doc(db, 'conversations', convId));
   const conv = csnap.data() || {};
-  const otherName = conv.studentName || 'Conversación';
+  const otherName = conv.title || conv.studentName || 'Conversación';
+  const subTitle = conv.direct ? '' : `Sobre ${esc(conv.studentName || '')}`;
   const desktop = window.innerWidth > 900;
   const chatHTML = `
     <div class="chat-header">
       ${desktop ? '' : `<button class="back" data-action="go" data-screen="chatList">‹</button>`}
       <span class="avatar-sm">${esc(initialsOf(otherName))}</span>
       <div><strong>${esc(otherName)}</strong>
-        <div class="meta">Sobre ${esc(conv.studentName || '')}</div></div>
+        ${subTitle ? `<div class="meta">${subTitle}</div>` : ''}</div>
     </div>
     <div class="messages" id="chat-messages"></div>
     <div class="chat-input">
@@ -1948,6 +2048,17 @@ async function renderUsers() {
       }
     });
   });
+  // Zona de peligro solo para admin.
+  if (admin) {
+    const danger = document.createElement('div');
+    danger.className = 'card';
+    danger.style.cssText = 'margin-top:24px;border-color:var(--danger)';
+    danger.innerHTML = `
+      <h3 style="color:var(--danger)">Zona de peligro</h3>
+      <p class="muted">Elimina todos los datos de la aplicación (alumnos, familias, chats, avisos, informes, etc.) para empezar desde cero. Tu usuario de administrador se conserva.</p>
+      <button class="btn danger block" data-action="wipe-all-data">Borrar todos los datos</button>`;
+    c.appendChild(danger);
+  }
 }
 ACTIONS['delete-student'] = async (d) => {
   if (!confirm('¿Eliminar este alumno? Se borrará su ficha.')) return;
