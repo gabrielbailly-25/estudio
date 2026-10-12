@@ -47,7 +47,9 @@ service cloud.firestore {
       allow update: if isAdmin()
                     || (signedIn() && myUid() == uid
                         && request.resource.data.role == resource.data.role);
-      allow delete: if false;
+      // Solo el admin puede eliminar usuarios (p. ej. limpieza total).
+      // No puede eliminarse a sí mismo.
+      allow delete: if isAdmin() && myUid() != uid;
 
       // Tokens push del propio dispositivo.
       match /pushTokens/{tokenId} {
@@ -135,7 +137,8 @@ service cloud.firestore {
       // el botón "Escribir al monitor").
       allow create: if signedIn() && myUid() in request.resource.data.participantUids;
       allow update: if signedIn() && myUid() in resource.data.participantUids;
-      allow delete: if false;
+      // Monitores y admin pueden eliminar sus conversaciones; el admin cualquiera.
+      allow delete: if isAdmin() || (isMonitor() && myUid() in resource.data.participantUids);
     }
 
     // ---------- Mensajes de chat ----------
@@ -148,7 +151,9 @@ service cloud.firestore {
       allow create: if signedIn()
                     && myUid() in request.resource.data.participantUids
                     && request.resource.data.senderUid == myUid();
-      allow update, delete: if false;
+      allow update: if false;
+      // Monitores y admin pueden borrar mensajes de sus conversaciones; el admin cualquiera.
+      allow delete: if isAdmin() || (isMonitor() && myUid() in resource.data.participantUids);
     }
   }
 }
