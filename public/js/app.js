@@ -378,10 +378,13 @@ async function renderHome() {
     : `${state.students.length} alumno(s) en la actividad.`;
 
   // Último aviso del tablón (fijados primero, como en la lista).
-  const nsnap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
-  const notices = nsnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  notices.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-  const latest = notices[0];
+  let latest = null;
+  try {
+    const nsnap = await getDocs(query(collection(db, 'notices'), orderBy('createdAt', 'desc'), limit(30)));
+    const notices = nsnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    notices.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    latest = notices[0] || null;
+  } catch (err) { console.error('Inicio: no se pudieron cargar los avisos.', err); }
 
   // Próxima sesión (primer doc con date >= hoy).
   let nextSession = null;
@@ -395,7 +398,8 @@ async function renderHome() {
   let metrics = '';
   let lastEval = null; // última evaluación del hijo (se reutiliza abajo)
   if (fam && child) {
-    const firstMonth = todayStr().slice(0, 7) + '-01';
+    try {
+      const firstMonth = todayStr().slice(0, 7) + '-01';
     const mesNombre = MESES_LARGO[new Date().getMonth()];
     const [asnap, authsnap, evsnap] = await Promise.all([
       getDocs(query(collection(db, 'attendance'),
@@ -429,13 +433,15 @@ async function renderHome() {
         <div class="metric-top"><span class="metric-ico blue">${NAV_ICONS.evaluate}</span><small>Hoy</small></div>
         <div>${todayAvg ? `<b>${todayAvg}</b><br><span>valoración de hoy</span>` : `<b>—</b><br><span>Sin evaluar hoy</span>`}</div>
       </div>`;
+    } catch (err) { console.error('Inicio: no se pudieron cargar las métricas.', err); }
   } else if (!fam) {
-    const [attsnap, authsnap, evsnap] = await Promise.all([
-      getDocs(query(collection(db, 'attendance'), where('date', '==', todayStr()))),
-      getDocs(query(collection(db, 'authorizations'), orderBy('createdAt', 'desc'), limit(50))),
-      getDocs(query(collection(db, 'evaluations'), where('date', '==', todayStr()))),
-    ]);
-    metrics = `
+    try {
+      const [attsnap, authsnap, evsnap] = await Promise.all([
+        getDocs(query(collection(db, 'attendance'), where('date', '==', todayStr()))),
+        getDocs(query(collection(db, 'authorizations'), orderBy('createdAt', 'desc'), limit(50))),
+        getDocs(query(collection(db, 'evaluations'), where('date', '==', todayStr()))),
+      ]);
+      metrics = `
       <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="attendance">
         <div class="metric-top"><span class="metric-ico">${NAV_ICONS.attendance}</span><small>Hoy</small></div>
         <div><b>${attsnap.size}</b><br><span>asistencias de hoy</span></div>
@@ -448,6 +454,7 @@ async function renderHome() {
         <div class="metric-top"><span class="metric-ico blue">${NAV_ICONS.evaluate}</span><small>Hoy</small></div>
         <div><b>${evsnap.size}/${state.students.length}</b><br><span>evaluaciones hechas</span></div>
       </div>`;
+    } catch (err) { console.error('Inicio: no se pudieron cargar las métricas.', err); }
   }
 
   // Tarjeta "Última valoración" (familia) o "Acciones rápidas" (monitor).
