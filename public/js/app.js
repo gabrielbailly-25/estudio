@@ -226,9 +226,9 @@ function renderNav() {
   if (isMonitor()) {
     items = [
       { id: 'home', label: 'Inicio', icon: 'home' },
-      { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
-      { id: 'evaluate', label: 'Evaluar', icon: 'evaluate' },
-      ...(isMonitor() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
+      { id: 'reports', label: 'Informes', icon: 'reports' },
+      { id: 'notices', label: 'Avisos', icon: 'notices' },
+      { id: 'attendance', label: 'Pasar lista', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
       { id: 'more', label: 'Más', icon: 'more' },
     ];
@@ -2100,8 +2100,11 @@ function renderMore() {
     { id: 'reports', label: 'Informes', icon: 'reports' },
     { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
     { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
-    ...(fam ? [{ id: 'progress', label: 'Evaluación diaria', icon: 'evaluate' }] : []),
+    ...(fam
+      ? [{ id: 'progress', label: 'Evaluación diaria', icon: 'evaluate' }]
+      : [{ id: 'evaluate', label: 'Evaluación diaria', icon: 'evaluate' }]),
     { id: 'calendar', label: 'Calendario de sesiones', icon: 'calendar' },
+    ...(!fam ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
     { id: 'profile', label: 'Perfil y ajustes', icon: 'profile' },
   ];
   $('more-content').innerHTML = `
