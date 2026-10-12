@@ -114,10 +114,9 @@ body.logged-out .bottom-nav { display: none; }
   padding: 34px; box-shadow: var(--shadow);
 }
 .login-mark {
-  width: 58px; height: 58px; border-radius: 18px;
-  background: var(--brand); color: #fff;
-  display: grid; place-items: center; font-size: 30px; margin-bottom: 24px;
+  display: grid; place-items: center; margin-bottom: 24px;
 }
+.login-mark img { display: block; }
 .login-card h1 { font-size: 30px; line-height: 1.12; letter-spacing: -.03em; margin: 0 0 9px; }
 .login-card > p { color: var(--muted); font-size: 17px; margin: 0 0 25px; }
 .google-btn {
