@@ -1354,6 +1354,7 @@ function subscribeNotifications() {
       const badge = $('notif-badge');
       badge.textContent = snap.size;
       badge.classList.toggle('hidden', snap.size === 0);
+      updateAppBadge(snap.size);
     });
 }
 
@@ -1394,11 +1395,13 @@ async function renderNotifications() {
           <div class="meta">${tsToDate(n.createdAt)}</div></div>
       </div>`;
     }).join('');
+  updateAppBadge(snap.docs.filter(d => !d.data().read).length);
 }
 ACTIONS['read-all-notif'] = async () => {
   const snap = await getDocs(query(collection(db, 'users', state.user.uid, 'notifications'),
     where('read', '==', false)));
   for (const d of snap.docs) await updateDoc(d.ref, { read: true });
+  updateAppBadge(0);
   renderNotifications();
 };
 ACTIONS['open-notif'] = async (d) => {
@@ -1444,6 +1447,15 @@ function renderMore() {
 }
 
 /* ---------------- Push: registro del token y mensajes en 1er plano ---------------- */
+// Globo con el número de notificaciones sin leer en el icono de la app.
+async function updateAppBadge(count) {
+  try {
+    if (!('setAppBadge' in navigator)) return;
+    if (count > 0) await navigator.setAppBadge(count);
+    else if ('clearAppBadge' in navigator) await navigator.clearAppBadge();
+  } catch (e) {}
+}
+
 async function initPush() {
   try {
     if (!await isSupported()) return;
