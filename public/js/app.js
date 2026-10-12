@@ -1472,6 +1472,11 @@ async function registerPushToken() {
   // del script; el scope por defecto (/) siempre está permitido.
   let registration;
   try {
+    // Limpia registros previos que puedan haber quedado en estado roto.
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { try { await r.unregister(); } catch (e) {} }
+    } catch (e) {}
     registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
   } catch (e) {
     console.warn('No se pudo registrar el service worker:', e);
@@ -1538,12 +1543,13 @@ ACTIONS['toggle-push'] = async () => {
         if (res.ok) {
           toast('Notificaciones push activadas.');
         } else {
+          const detail = res.error && res.error.message ? ': ' + res.error.message : '.';
           const msg = {
             'no-vapid': 'Falta configurar la clave VAPID.',
-            'sw-failed': 'No se pudo registrar el service worker.',
-            'token-failed': 'No se pudo obtener el token push.',
+            'sw-failed': 'No se pudo registrar el service worker' + detail,
+            'token-failed': 'No se pudo obtener el token push' + detail,
             'no-token': 'No se obtuvo token push.',
-            'save-failed': 'No se pudo guardar el token.',
+            'save-failed': 'No se pudo guardar el token' + detail,
           }[res.reason] || 'No se pudo activar el push en este dispositivo.';
           toast(msg);
         }
