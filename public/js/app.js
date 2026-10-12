@@ -39,7 +39,7 @@ const state = {
 const isMonitor = () => state.role === 'monitor' || state.role === 'admin';
 const isAdmin = () => state.role === 'admin';
 const isFamilia = () => state.role === 'familia';
-const ROLE_LABEL = { admin: 'Administrador', monitor: 'Monitor/a', familia: 'Familia' };
+const ROLE_LABEL = { admin: 'Administrador', monitor: 'Profesor/a', familia: 'Familia' };
 const initialsOf = (name) =>
   String(name || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
@@ -969,14 +969,14 @@ async function renderChild() {
         <h2>${esc(child.firstName)} ${esc(child.lastName || '')}</h2>
         <p class="muted" style="margin:4px 0 0">Studio sistema · Curso 2026–2027</p>
       </div>
-      <button class="btn secondary" data-action="contact-monitor">Escribir al monitor</button>
+      <button class="btn secondary" data-action="contact-monitor">Escribir al profesor</button>
     </div>
     ${state.children.length > 1 ? `<div class="card" style="margin-top:12px">${childSelectHTML('child-sel')}</div>` : ''}
     <div class="grid" style="margin-top:12px">
       <div class="card col-7">
         <div class="section-head"><h3>Datos de la actividad</h3></div>
         <div class="detail-grid">
-          <div class="detail-row"><span>Monitor responsable</span><b>${esc(child.monitorName || '—')}</b></div>
+          <div class="detail-row"><span>Profesor responsable</span><b>${esc(child.monitorName || '—')}</b></div>
           <div class="detail-row"><span>Grupo</span><b>${esc(child.group || '—')}</b></div>
           <div class="detail-row"><span>Horario habitual</span><b>${esc(child.schedule || '—')}</b></div>
           <div class="detail-row"><span>Aula habitual</span><b>${esc(child.classroom || '—')}</b></div>
@@ -1230,7 +1230,7 @@ async function renderReports() {
     c.innerHTML = `
       <div class="screen-head"><div>
         <h2>Informes de ${esc(child.firstName)}</h2>
-        <p class="muted">Consulta el seguimiento diario y los informes mensuales enviados por el monitor.</p>
+        <p class="muted">Consulta el seguimiento diario y los informes mensuales enviados por el profesor.</p>
       </div></div>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
       <div class="filters">
@@ -1301,7 +1301,7 @@ const reportCardExpand = (id, r) => {
       <h5>Resumen</h5>
       <p style="white-space:pre-wrap">${esc(r.body)}</p>
       <div class="meta">Enviado ${tsToDate(r.createdAt)}</div>
-      <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al monitor →</button>
+      <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al profesor →</button>
     </div>` : ''}
   </article>`;
 };
@@ -1443,7 +1443,7 @@ ACTIONS['new-conversation'] = async () => {
     const usnap = await getDocs(query(collection(db, 'users'), where('role', '==', role), limit(20)));
     people = usnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.id !== state.user.uid);
   } catch (e) { console.error(e); }
-  const peopleLabel = isAdmin() ? 'Monitor/a' : 'Administrador';
+  const peopleLabel = isAdmin() ? 'Profesor/a' : 'Administrador';
   box.innerHTML = `<div class="card">
     <label>Chat directo con</label>
     ${people.length ? `
@@ -1567,7 +1567,7 @@ ACTIONS['contact-monitor'] = async () => {
   const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
   if (!child) { toast('Aún no hay alumnos vinculados a tu familia.'); return; }
   const msnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'monitor'), limit(5)));
-  if (msnap.empty) { toast('Aún no hay monitores dados de alta.'); return; }
+  if (msnap.empty) { toast('Aún no hay profesores dados de alta.'); return; }
   const m = msnap.docs[0];
   // Reutiliza la conversación existente con ese monitor para este alumno, si la hay.
   const csnap = await getDocs(query(collection(db, 'conversations'),
@@ -1606,7 +1606,7 @@ async function openChat(convId, inline = false) {
       <input type="text" id="chat-text" placeholder="Escribe un mensaje…" maxlength="500" autocomplete="off">
       <button class="send-btn" data-action="send-message" aria-label="Enviar">➤</button>
     </div>
-    <p class="meta" style="text-align:center;margin:8px 0 0">Canal entre monitor y familia, sin compartir teléfonos personales.</p>`;
+    <p class="meta" style="text-align:center;margin:8px 0 0">Canal entre profesor y familia, sin compartir teléfonos personales.</p>`;
   if (desktop && $('chat-main')) {
     $('chat-main').innerHTML = chatHTML;
     document.querySelectorAll('.conv-item').forEach(el =>
@@ -2254,7 +2254,7 @@ async function renderUsers() {
       <input type="text" id="ns-last" maxlength="80" autocomplete="off" value="${esc(es?.lastName || '')}">
       <label for="ns-group">Grupo</label>
       <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off" value="${esc(es?.group || '')}">
-      <label for="ns-monitor">Monitor responsable</label>
+      <label for="ns-monitor">Profesor responsable</label>
       <input type="text" id="ns-monitor" maxlength="80" autocomplete="off" value="${esc(es?.monitorName || defaultMonitor)}">
       <label for="ns-schedule">Horario habitual</label>
       <input type="text" id="ns-schedule" maxlength="60" placeholder="Ej.: L–J · 17:00–18:30" autocomplete="off" value="${esc(es?.schedule || '')}">
