@@ -20,14 +20,16 @@ const messaging = admin.messaging();
 const REGION = 'europe-west1';
 
 // Guarda la notificación en el centro de notificaciones del usuario.
-async function saveNotification(uid, { type, title, body }) {
-  await db.collection('users').doc(uid).collection('notifications').add({
+async function saveNotification(uid, { type, title, body, reportType }) {
+  const data = {
     type,
     title,
     body: body || '',
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
+  if (reportType) data.reportType = reportType;
+  await db.collection('users').doc(uid).collection('notifications').add(data);
 }
 
 // Envía push FCM a todos los tokens registrados del usuario.
@@ -58,11 +60,31 @@ async function sendPush(uid, { title, body }) {
   }
 }
 
+// Categoría de cobertura para cada tipo de notificación.
+function coverageKeyFor(type, notif) {
+  switch (type) {
+    case 'chat': return 'chat';
+    case 'notice': return 'avisos';
+    case 'attendance': return 'incidencias';
+    case 'authorization': return 'respuestas';
+    case 'evaluation': return 'informe_diario';
+    case 'report': return (notif && notif.reportType === 'mensual') ? 'informe_mensual' : 'informe_diario';
+    default: return null;
+  }
+}
+
 // Notifica a una lista de usuarios (centro + push).
 async function notifyUsers(uids, notif) {
   const uniq = [...new Set(uids.filter(Boolean))];
+  const key = coverageKeyFor(notif.type, notif);
   for (const uid of uniq) {
     try {
+      // Respeta la cobertura de alertas del usuario (por defecto todo activado).
+      if (key) {
+        const usnap = await db.collection('users').doc(uid).get();
+        const cov = (usnap.data() && usnap.data().alertCoverage) || {};
+        if (cov[key] === false) continue;
+      }
       await saveNotification(uid, notif);
       await sendPush(uid, { title: notif.title, body: notif.body });
     } catch (err) {
@@ -106,6 +128,7 @@ exports.onReportCreated = onDocumentCreated(
     const families = await familyUidsOf(r.studentId);
     await notifyUsers(families, {
       type: 'report',
+      reportType: r.type || (r.month ? 'mensual' : 'diario'),
       title: 'Nuevo informe: ' + (r.title || ''),
       body: 'Ya puedes leer el informe en la app.',
     });
