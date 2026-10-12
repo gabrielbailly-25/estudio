@@ -95,6 +95,7 @@ const fmtMonth = (ym) => {
   return `${MESES_LARGO[parseInt(m, 10) - 1]} de ${y}`;
 };
 const DIAS_LARGO = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+const DIAS_CORTO = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const fmtDateLong = (iso) => {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
@@ -349,9 +350,10 @@ async function loadRoster() {
 
 /* ---------------- Tablón de anuncios ---------------- */
 // Tarjeta de aviso; los monitores ven Editar y Eliminar.
-const noticeCard = (n) => {
+const noticeCard = (n, nFamilies = 0) => {
   const read = (n.readBy || []).includes(state.user.uid);
   const fam = !isMonitor();
+  const nRead = (n.readBy || []).length;
   return `
   <article class="card notice-card ${n.pinned ? 'pinned' : ''}">
     ${!read && fam ? '<span class="unread-dot"></span>' : ''}
@@ -359,6 +361,7 @@ const noticeCard = (n) => {
     <div class="notif-main">
       <div class="notif-tags">
         ${n.pinned ? '<span class="tag tag-unread">Fijado</span>' : ''}
+        ${n.tag ? `<span class="tag tag-unread">${esc(n.tag)}</span>` : ''}
       </div>
       <h4>${esc(n.title)}</h4>
       <p class="muted">${esc(n.body)}</p>
@@ -373,7 +376,9 @@ const noticeCard = (n) => {
         ? '<span class="tag tag-read">Leído</span>'
         : `<button class="btn small" data-action="confirm-notice-read" data-id="${n.id}">Confirmar lectura</button>`}
       <button class="text-btn" data-action="contact-monitor">Responder</button>
-    </div>` : ''}
+    </div>` : (nFamilies ? `<div class="notice-side">
+      <span class="tag ${nRead >= nFamilies && nFamilies ? 'tag-read' : 'tag-unread'}">${nRead}/${nFamilies} leídos</span>
+    </div>` : '')}
   </article>`;
 };
 
@@ -386,10 +391,43 @@ async function renderNotices() {
   const f = state.noticeFilter || 'all';
   if (f === 'unread') notices = notices.filter(n => !(n.readBy || []).includes(state.user.uid));
   if (f === 'pinned') notices = notices.filter(n => n.pinned);
+  // Cuenta familias para el "X/Y leídos".
+  let nFamilies = 0;
+  if (isMonitor()) {
+    try {
+      const usnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'familia'), limit(100)));
+      nFamilies = usnap.size;
+    } catch (e) {}
+  }
   c.innerHTML = `
-    <div class="screen-head"><h2>Avisos</h2>
-      ${isMonitor() ? `<button class="btn small" data-action="new-notice">+ Publicar</button>` : ''}
+    <div class="screen-head"><h2>Avisos</h2></div>
+    ${isMonitor() ? `
+    <div class="card">
+      <div class="section-head"><div>
+        <h3>Publicar en el tablón</h3>
+        <p class="muted">Las familias lo verán al entrar y recibirán una notificación.</p>
+      </div><span class="badge info">Nuevo aviso</span></div>
+      <label for="nc-title">Título</label>
+      <input type="text" id="nc-title" maxlength="120" placeholder="Ej.: Cambio de aula">
+      <label for="nc-body">Texto del aviso</label>
+      <textarea id="nc-body" placeholder="Escribe la información para las familias"></textarea>
+      <div class="grid"><div class="col-6">
+        <label for="nc-date">Fecha</label>
+        <input type="date" id="nc-date" value="${todayStr()}">
+      </div><div class="col-6">
+        <label for="nc-vis">Visibilidad</label>
+        <select id="nc-vis">
+          <option value="normal">Aviso normal</option>
+          <option value="pinned">Fijado en el tablón</option>
+          <option value="important">Importante</option>
+        </select>
+      </div></div>
+      <button class="btn block" data-action="publish-notice-inline" style="margin-top:12px">Publicar en el tablón y avisar</button>
     </div>
+    <div class="section-head" style="margin-top:16px"><div>
+      <h3>Avisos publicados</h3>
+      <p class="muted">Consulta la lectura de cada aviso.</p>
+    </div></div>` : `
     <div class="filters">
       <button class="filter ${f === 'all' ? 'active' : ''}" data-action="notice-filter" data-f="all">Todos</button>
       <button class="filter ${f === 'unread' ? 'active' : ''}" data-action="notice-filter" data-f="unread">Sin leer</button>
@@ -398,12 +436,26 @@ async function renderNotices() {
     <div class="section-head" style="margin-top:16px"><div>
       <h3>Tablón de anuncios</h3>
       <p class="muted">Los avisos nuevos y fijados aparecen destacados.</p>
-    </div></div>
+    </div></div>`}
     <div class="grid"><div class="col-12">
-      ${notices.length ? notices.map(noticeCard).join('') : emptyBox('📋', 'No hay avisos.')}
+      ${notices.length ? notices.map(n => noticeCard(n, nFamilies)).join('') : emptyBox('📋', 'No hay avisos.')}
     </div></div>`;
 }
 ACTIONS['notice-filter'] = (d) => { state.noticeFilter = d.f; renderNotices(); };
+ACTIONS['publish-notice-inline'] = async () => {
+  const title = $('nc-title').value.trim();
+  const body = $('nc-body').value.trim();
+  if (!title || !body) { toast('Escribe un título y un texto.'); return; }
+  const vis = $('nc-vis').value;
+  await addDoc(collection(db, 'notices'), {
+    title, body,
+    pinned: vis === 'pinned',
+    tag: vis === 'important' ? 'Importante' : null,
+    createdByUid: state.user.uid, createdAt: serverTimestamp(),
+  });
+  toast('Aviso publicado. Las familias recibirán un aviso.');
+  renderNotices();
+};
 ACTIONS['confirm-notice-read'] = async (d) => {
   try {
     await updateDoc(doc(db, 'notices', d.id), { readBy: arrayUnion(state.user.uid) });
@@ -612,14 +664,51 @@ ACTIONS['publish-notice'] = async () => {
 async function renderAttendance() {
   const c = $('attendance-content');
   if (isMonitor()) {
+    const today = todayStr();
+    const [y, m, d] = today.split('-').map(Number);
+    const wd = DIAS_LARGO[new Date(y, m - 1, d).getDay()];
     c.innerHTML = `
-      <h2>Pasar lista</h2>
+      <div class="screen-head"><h2>Pasar lista</h2></div>
+      <div class="section-head"><div>
+        <h3>Sesión de hoy</h3>
+        <p class="muted">${wd[0].toUpperCase() + wd.slice(1)} ${d} · ${fmtDate(today)}</p>
+      </div><span class="tag tag-info">Hoy</span></div>
       <label for="att-date">Fecha</label>
-      <input type="date" id="att-date" value="${todayStr()}">
-      <div id="att-rows" style="margin-top:12px"></div>
-      <button class="btn block" data-action="save-attendance">Guardar asistencia</button>`;
+      <input type="date" id="att-date" value="${today}">
+      <div class="card" style="margin-top:12px"><div id="att-rows"></div>
+        <div class="cal-legend" style="justify-content:flex-start;margin:12px 0">
+          <span><i class="cal-dot presente"></i>Presente</span>
+          <span><i class="cal-dot ausente"></i>Ausente</span>
+          <span><i class="cal-dot justificado"></i>Justificado</span>
+        </div>
+        <button class="btn block" data-action="save-attendance">Guardar lista de hoy</button>
+      </div>
+      <div class="section-head" style="margin-top:16px"><h3>Historial por alumno</h3></div>
+      <div class="card">
+        <label for="att-hist-student">Alumno/a</label>
+        <select id="att-hist-student">${state.students.map(s =>
+          `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+        <div id="att-hist-list" style="margin-top:12px"></div>
+      </div>`;
     $('att-date').addEventListener('change', (e) => loadAttendanceRows(e.target.value));
     await loadAttendanceRows($('att-date').value);
+    const hsel = $('att-hist-student');
+    const loadHist = async () => {
+      const box = $('att-hist-list');
+      const snap = await getDocs(query(collection(db, 'attendance'),
+        where('studentId', '==', hsel.value), orderBy('date', 'desc'), limit(20)));
+      const label = { presente: 'Presente', ausente: 'Ausente', justificado: 'Justificado' };
+      box.innerHTML = snap.empty ? emptyBox('✅', 'Sin registros.') :
+        snap.docs.map(dd => {
+          const a = dd.data();
+          return `<div class="history-line">
+            <div><strong>${fmtDateLong(a.date)}</strong></div>
+            <span class="tag ${a.status}">${label[a.status] || a.status}</span>
+          </div>`;
+        }).join('');
+    };
+    hsel.addEventListener('change', loadHist);
+    await loadHist();
   } else {
     if (!state.children.length) {
       c.innerHTML = `<h2>Asistencia</h2>` + emptyBox('✅', 'Aún no hay alumnos vinculados a tu familia.');
@@ -646,13 +735,14 @@ async function loadAttendanceRows(date) {
   }
   box.innerHTML = state.students.map(s => {
     const cur = state.attMarks[s.id] || 'presente';
-    return `<div class="card">
-      <div><strong>${esc(s.firstName)} ${esc(s.lastName || '')}</strong>
-      <div class="meta">${esc(s.group || '')}</div></div>
-      <div class="seg">
+    return `<div class="att-row">
+      <span class="avatar-sm">${esc(initialsOf(s.firstName + ' ' + (s.lastName || '')))}</span>
+      <div style="flex:1"><strong>${esc(s.firstName)} ${esc(s.lastName || '')}</strong>
+        <div class="meta">${esc(s.group || '')}</div></div>
+      <div class="seg seg-att">
         <button data-action="att-mark" data-student="${s.id}" data-status="presente" class="${cur === 'presente' ? 'on' : ''}">Presente</button>
         <button data-action="att-mark" data-student="${s.id}" data-status="ausente" class="${cur === 'ausente' ? 'on no' : ''}">Ausente</button>
-        <button data-action="att-mark" data-student="${s.id}" data-status="justificado" class="${cur === 'justificado' ? 'on maybe' : ''}">Justif.</button>
+        <button data-action="att-mark" data-student="${s.id}" data-status="justificado" class="${cur === 'justificado' ? 'on maybe' : ''}">Justificado</button>
       </div></div>`;
   }).join('');
 }
@@ -778,28 +868,58 @@ async function renderEvaluate() {
   const items = (await loadEvalItems()).filter(i => i.active !== false);
   state.evalMarks = {};
   items.forEach(it => { state.evalMarks[it.id] = 2; });
+  const today = todayStr();
+  // Progreso: evaluaciones compartidas hoy vs total alumnos.
+  let nDone = 0;
+  try {
+    const esnap = await getDocs(query(collection(db, 'evaluations'), where('date', '==', today), limit(100)));
+    nDone = esnap.size;
+  } catch (e) {}
+  const total = state.students.length;
+  const pct = total ? Math.round(nDone / total * 100) : 0;
+  const selStudent = state.students[0];
   c.innerHTML = `
     <div class="section-head"><h2>Evaluación diaria</h2>
       <button class="icon-btn" data-action="go" data-screen="evalItems" aria-label="Configurar ítems de evaluación">⚙️</button>
     </div>
     ${items.length ? `
-    <label for="ev-student">Alumno/a</label>
-    <select id="ev-student">${state.students.map(s =>
-      `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
-    <label for="ev-date">Fecha</label>
-    <input type="date" id="ev-date" value="${todayStr()}">
-    ${items.map(it => `
-      <label>${esc(it.label)}</label>
-      <div class="seg">
-        <button data-action="ev-mark" data-crit="${it.id}" data-val="1">1 · Mejorar</button>
-        <button data-action="ev-mark" data-crit="${it.id}" data-val="2" class="on">2 · Bien</button>
-        <button data-action="ev-mark" data-crit="${it.id}" data-val="3">3 · Muy bien</button>
-      </div>`).join('')}
-    <div class="meta" style="margin-top:8px">1 Necesita mejorar · 2 Bien · 3 Muy bien</div>
-    <label for="ev-comment">Comentario (opcional)</label>
-    <textarea id="ev-comment" placeholder="Observaciones del día…"></textarea>
-    <button class="btn block" data-action="save-evaluation">Guardar evaluación</button>`
+    <div class="card">
+      <div class="row" style="align-items:center;margin-bottom:16px">
+        <span class="avatar-sm" style="width:48px;height:48px">${esc(initialsOf(selStudent.firstName + ' ' + (selStudent.lastName || '')))}</span>
+        <div style="flex:1"><strong>${esc(selStudent.firstName)} ${esc(selStudent.lastName || '')}</strong>
+          <div class="meta">Valoración de hoy · ${fmtDate(today)}</div></div>
+        <select id="ev-student" style="width:auto;flex:0 0 auto" aria-label="Alumno">${state.students.map(s =>
+          `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+      </div>
+      <input type="hidden" id="ev-date" value="${today}">
+      ${items.map(it => `
+        <div class="eval-row">
+          <span class="eval-label">${esc(it.label)}</span>
+          <div class="seg seg-nums">
+            <button data-action="ev-mark" data-crit="${it.id}" data-val="1">1</button>
+            <button data-action="ev-mark" data-crit="${it.id}" data-val="2" class="on">2</button>
+            <button data-action="ev-mark" data-crit="${it.id}" data-val="3">3</button>
+          </div>
+        </div>`).join('')}
+      <div class="meta" style="margin:8px 0">1 Necesita mejorar · 2 Adecuado · 3 Muy bien</div>
+      <label for="ev-comment" style="margin-top:12px">Nota breve para la familia (opcional)</label>
+      <textarea id="ev-comment" placeholder="Nota breve para la familia (opcional)"></textarea>
+      <button class="btn block" data-action="save-evaluation" style="margin-top:12px">Compartir valoración con la familia</button>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="row"><h3 style="margin:0">Progreso de la sesión</h3>
+        <span class="tag">${nDone} de ${total} compartidas</span></div>
+      <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+    </div>`
     : emptyBox('⚙️', 'No hay ítems de evaluación activos. Configúralos con el botón ⚙️.')}`;
+  const sel = $('ev-student');
+  if (sel) sel.addEventListener('change', () => {
+    // Recarga para mostrar el alumno seleccionado en la cabecera.
+    renderEvaluate();
+    // Restaura la selección.
+    const s2 = $('ev-student');
+    if (s2) s2.value = sel.value;
+  });
 }
 ACTIONS['ev-mark'] = (d, el) => {
   state.evalMarks[d.crit] = parseInt(d.val, 10);
@@ -1035,33 +1155,45 @@ async function renderReports() {
     // Estado del mes: cuenta diarios/mensuales creados este mes.
     const msnap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
     const ym = todayStr().slice(0, 7);
-    let nDiario = 0, nMensual = 0;
+    let nDiario = 0, nMensual = 0, nLeidos = 0;
+    const monthlyDone = new Set();
     msnap.docs.forEach(d => {
       const r = d.data();
       let rym = '';
       try { rym = r.createdAt.toDate().toISOString().slice(0, 7); } catch { /* sin fecha */ }
-      if (rym === ym) { reportType(r) === 'mensual' ? nMensual++ : nDiario++; }
+      if (rym === ym) {
+        if (reportType(r) === 'mensual') { nMensual++; monthlyDone.add(r.studentId); }
+        else nDiario++;
+        if ((r.readBy || []).length) nLeidos++;
+      }
     });
+    const nPendientes = Math.max(0, state.students.length - monthlyDone.size);
+    const last = msnap.docs[0];
+    const lastR = last ? last.data() : null;
+    const lastStudent = lastR ? state.students.find(s => s.id === lastR.studentId) : null;
     c.innerHTML = `
       <div class="screen-head"><h2>Informes</h2></div>
       <div class="grid">
         <div class="col-7"><div class="card">
-          <div class="section-head"><h3>Preparar informe</h3><span class="badge info">Borrador</span></div>
+          <div class="section-head"><div>
+            <h3>Preparar informe</h3>
+            <p class="muted">Elige el tipo de seguimiento que verá la familia.</p>
+          </div><span class="badge info">Borrador</span></div>
           <div class="report-form">
-            <label for="rp-student">Alumno/a</label>
+            <label for="rp-student">Alumno</label>
             <select id="rp-student">${state.students.map(s =>
               `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
-            <label for="rp-type">Tipo</label>
+            <label for="rp-type">Tipo de informe</label>
             <select id="rp-type">
-              <option value="diario">Diario</option>
-              <option value="mensual">Mensual</option>
+              <option value="diario">Informe diario</option>
+              <option value="mensual">Informe mensual</option>
             </select>
             <label for="rp-month">Mes</label>
             <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
-            <label for="rp-title">Título</label>
-            <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Informe de octubre">
-            <label for="rp-body">Informe</label>
-            <textarea id="rp-body" placeholder="Cómo va el alumno en la actividad…"></textarea>
+            <label for="rp-title">Resumen</label>
+            <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde">
+            <label for="rp-body">Valoración para la familia</label>
+            <textarea id="rp-body" placeholder="Cómo ha ido la sesión, qué reforzar…"></textarea>
             <div class="row" style="margin-top:12px;gap:8px">
               <button class="btn secondary" data-action="preview-report" style="flex:1">Previsualizar</button>
               <button class="btn" data-action="publish-report2" style="flex:1">Publicar y avisar</button>
@@ -1069,12 +1201,19 @@ async function renderReports() {
             <p class="meta" style="margin-top:8px">Al publicar, la familia recibe un aviso automáticamente.</p>
           </div>
         </div></div>
-        <div class="col-5"><div class="card">
-          <div class="section-head"><h3>Estado del mes</h3></div>
-          <div class="history-line"><span>Informes diarios</span><b>${nDiario}</b></div>
-          <div class="history-line"><span>Informes mensuales</span><b>${nMensual}</b></div>
-          <p class="meta" style="margin-top:10px">Enviados en ${fmtMonth(ym)}.</p>
-        </div></div>
+        <div class="col-5">
+          <div class="card">
+            <div class="section-head"><h3>Estado del mes</h3><span class="tag">${fmtMonth(ym).split(' de ')[0]}</span></div>
+            <div class="history-line"><span>Informes diarios enviados</span><b>${nDiario}</b></div>
+            <div class="history-line"><span>Mensuales pendientes</span><b style="color:var(--accent)">${nPendientes}</b></div>
+            <div class="history-line"><span>Leídos por familias</span><b style="color:var(--brand)">${nLeidos}</b></div>
+          </div>
+          ${lastR ? `<div class="card" style="margin-top:16px">
+            <h3>Último informe</h3>
+            <p class="muted">${esc(lastStudent ? `${lastStudent.firstName} ${lastStudent.lastName || ''}`.trim() : '')} · ${reportType(lastR) === 'mensual' ? 'Mensual' : 'Diario'} · ${tsToDate(lastR.createdAt)}</p>
+            <button class="text-btn" data-action="open-report" data-id="${last.id}">Abrir vista previa →</button>
+          </div>` : ''}
+        </div>
       </div>
       <div class="section-head" style="margin-top:8px"><h3>Enviados</h3></div>
       <div id="reports-list"></div>`;
@@ -1167,8 +1306,14 @@ const reportCardExpand = (id, r) => {
   </article>`;
 };
 
-ACTIONS['toggle-report'] = (d) => {
-  state.openReportId = state.openReportId === d.id ? null : d.id;
+ACTIONS['toggle-report'] = async (d) => {
+  const willOpen = state.openReportId !== d.id;
+  state.openReportId = willOpen ? d.id : null;
+  // Al abrirlo, la familia lo marca como leído.
+  if (willOpen && !isMonitor()) {
+    try { await updateDoc(doc(db, 'reports', d.id), { readBy: arrayUnion(state.user.uid) }); }
+    catch (e) { /* sin permiso o ya leído */ }
+  }
   loadReports();
 };
 
@@ -1545,29 +1690,55 @@ ACTIONS['send-message'] = async () => {
 async function renderAuths() {
   const c = $('auths-content');
   const snap = await getDocs(query(collection(db, 'authorizations'), orderBy('createdAt', 'desc'), limit(30)));
+  // Total familias para el "X de Y firmadas".
+  let nFamilies = 0;
+  if (isMonitor()) {
+    try {
+      const usnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'familia'), limit(100)));
+      nFamilies = usnap.size;
+    } catch (e) {}
+  }
   c.innerHTML = `
     <div class="screen-head"><h2>Autorizaciones</h2>
-      ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="authCompose">+ Nueva</button>` : ''}
-    </div><div id="auths-list"></div>`;
+      ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="authCompose">+ Crear solicitud</button>` : ''}
+    </div>
+    ${isMonitor() ? `<div class="section-head"><div>
+      <h3>Solicitudes a las familias</h3>
+      <p class="muted">Crea autorizaciones y comprueba su estado.</p>
+    </div></div>` : ''}
+    <div id="auths-list"></div>`;
   const box = $('auths-list');
   if (snap.empty) { box.innerHTML = emptyBox('✍️', 'Aún no hay autorizaciones.'); return; }
   const cards = [];
   for (const d of snap.docs) {
     const a = d.data();
-    let status;
     if (isFamilia()) {
       const s = await getDoc(doc(db, 'authorizations', d.id, 'signatures', state.user.uid));
-      status = s.exists()
+      const status = s.exists()
         ? '<span class="tag signed">Firmada</span>'
         : '<span class="tag pending">Pendiente de firma</span>';
+      cards.push(`<div class="card" data-action="open-auth" data-id="${d.id}" style="cursor:pointer">
+        <div class="row"><h3>${esc(a.title)}</h3>${status}</div>
+        <div class="meta">${a.dueDate ? 'Límite: ' + fmtDate(a.dueDate) : ''}</div>
+      </div>`);
     } else {
       const ss = await getDocs(collection(db, 'authorizations', d.id, 'signatures'));
-      status = `<span class="meta">✍️ ${ss.size} firmas</span>`;
+      const nSigned = ss.size;
+      const pct = nFamilies ? Math.round(nSigned / nFamilies * 100) : 0;
+      const done = nFamilies && nSigned >= nFamilies;
+      cards.push(`<div class="card" data-action="open-auth" data-id="${d.id}" style="cursor:pointer">
+        <div class="auth-card-head">
+          <span class="notif-ico">📝</span>
+          <div style="flex:1">
+            <div class="row"><h3 style="margin:0">${esc(a.title)}</h3>
+              <span class="tag ${done ? 'tag-read' : 'tag-unread'}">${nSigned} de ${nFamilies} firmadas</span></div>
+            <div class="meta">Enviada a ${nFamilies} familias${a.createdAt ? ' el ' + tsToDate(a.createdAt).split(',')[0] : ''}.</div>
+          </div>
+        </div>
+        <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
+        <button class="text-btn" style="margin-top:8px">Ver respuestas</button>
+      </div>`);
     }
-    cards.push(`<div class="card" data-action="open-auth" data-id="${d.id}" style="cursor:pointer">
-      <div class="row"><h3>${esc(a.title)}</h3>${status}</div>
-      <div class="meta">${a.dueDate ? 'Límite: ' + fmtDate(a.dueDate) : ''}</div>
-    </div>`);
   }
   box.innerHTML = cards.join('');
 }
@@ -1632,6 +1803,8 @@ async function renderCalendar() {
   const c = $('calendar-content');
   const snap = await getDocs(query(collection(db, 'sessions'),
     where('date', '>=', todayStr()), orderBy('date', 'asc'), limit(30)));
+  const sessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const upcoming = sessions.slice(0, 5);
   c.innerHTML = `
     <div class="screen-head"><h2>Calendario</h2>
       ${isMonitor() ? `<button class="btn small" data-action="toggle-session-form">+ Sesión</button>` : ''}
@@ -1641,17 +1814,38 @@ async function renderCalendar() {
       <label for="se-start">Hora de inicio</label><input type="time" id="se-start" value="17:30">
       <label for="se-end">Hora de fin</label><input type="time" id="se-end" value="19:00">
       <label for="se-title">Título</label><input type="text" id="se-title" placeholder="Estudio dirigido">
+      <label for="se-room">Aula</label><input type="text" id="se-room" placeholder="Ej.: Aula 2">
       <button class="btn block" data-action="save-session">Guardar sesión</button>
     </div>
-    <div id="sessions-list" style="margin-top:12px"></div>`;
+    <div class="grid">
+      <div class="col-7"><div class="card">
+        <div class="cal-head">
+          <h3 style="margin:0">Próximas fechas</h3>
+        </div>
+        <div id="sessions-list"></div>
+      </div></div>
+      <div class="col-5">
+        <h3>Próximas sesiones</h3>
+        ${upcoming.length ? upcoming.map(s => {
+          const [y, m, d] = s.date.split('-').map(Number);
+          const wd = DIAS_CORTO[new Date(y, m - 1, d).getDay()];
+          return `<div class="card" style="margin-bottom:12px">
+            <span class="tag tag-info">${wd} ${d}</span>
+            <h4 style="margin:8px 0 4px">${esc(s.title || 'Estudio dirigido')}</h4>
+            <p class="muted" style="margin:0">${esc(s.startTime || '')}–${esc(s.endTime || '')}${s.room ? ' · ' + esc(s.room) : ''}</p>
+            ${isMonitor() ? `<button class="text-btn" data-action="delete-session" data-id="${s.id}" style="color:var(--danger);margin-top:8px">🗑️ Eliminar</button>` : ''}
+          </div>`;
+        }).join('') : emptyBox('📅', 'Aún no hay sesiones programadas.')}
+      </div>
+    </div>`;
   $('sessions-list').innerHTML = snap.empty
     ? emptyBox('📅', 'Aún no hay sesiones programadas.')
-    : snap.docs.map(d => {
-      const s = d.data();
-      return `<div class="card">
-        <div class="row"><strong>${fmtDate(s.date)}</strong>
-          <span class="meta">${esc(s.startTime || '')}–${esc(s.endTime || '')}</span></div>
-        <p>${esc(s.title || 'Estudio dirigido')}</p></div>`;
+    : sessions.map(s => {
+      return `<div class="history-line">
+        <div><strong>${fmtDateLong(s.date)}</strong>
+          <div class="meta">${esc(s.startTime || '')}–${esc(s.endTime || '')}${s.room ? ' · ' + esc(s.room) : ''}</div></div>
+        <span class="meta">${esc(s.title || '')}</span>
+      </div>`;
     }).join('');
 }
 ACTIONS['toggle-session-form'] = () => $('session-form').classList.toggle('hidden');
@@ -1659,9 +1853,16 @@ ACTIONS['save-session'] = async () => {
   await addDoc(collection(db, 'sessions'), {
     date: $('se-date').value, startTime: $('se-start').value, endTime: $('se-end').value,
     title: $('se-title').value.trim() || 'Estudio dirigido',
+    room: $('se-room').value.trim(),
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
   });
   toast('Sesión guardada.');
+  renderCalendar();
+};
+ACTIONS['delete-session'] = async (d) => {
+  if (!confirm('¿Eliminar esta sesión?')) return;
+  await deleteDoc(doc(db, 'sessions', d.id));
+  toast('Sesión eliminada.');
   renderCalendar();
 };
 
@@ -1787,20 +1988,52 @@ ACTIONS['open-notif'] = async (d) => {
 /* ---------------- Perfil y menú "Más" ---------------- */
 async function renderProfile() {
   const kids = isFamilia() ? state.children : [];
+  const name = state.profile.displayName || 'Usuario';
+  if (isMonitor()) {
+    const items = [
+      { label: 'Preferencias de avisos', icon: '🔔', screen: 'notifications' },
+      { label: 'Horario del grupo', icon: '📅', screen: 'calendar' },
+      { label: 'Mi información', icon: '👤', screen: null },
+    ];
+    $('profile-content').innerHTML = `
+      <div class="screen-head"><h2>Perfil</h2></div>
+      <div class="grid">
+        <div class="col-5"><div class="card" style="text-align:center;padding:32px 16px">
+          <span class="avatar-lg">${esc(initialsOf(name))}</span>
+          <h3 style="margin:16px 0 4px">${esc(name)}</h3>
+          <p class="muted" style="margin:0">${ROLE_LABEL[state.role] || state.role}</p>
+          <div style="margin-top:12px"><span class="tag ${state.role === 'admin' ? 'tag-unread' : 'tag-read'}">Vista ${state.role === 'admin' ? 'admin' : 'monitor'}</span></div>
+          <p class="meta" style="margin-top:12px">${esc(state.profile.email || '')}</p>
+        </div></div>
+        <div class="col-7"><div class="card menu-list">
+          ${items.map(i => `
+            <button class="menu-row big" ${i.screen ? `data-action="go" data-screen="${i.screen}"` : `data-action="profile-info"`}>
+              <span class="menu-ico" style="font-size:28px">${i.icon}</span>
+              <span class="menu-label">${i.label}</span><b>›</b>
+            </button>`).join('')}
+        </div></div>
+      </div>
+      <button class="btn danger block" data-action="sign-out" style="margin-top:16px">Cerrar sesión</button>`;
+    return;
+  }
   $('profile-content').innerHTML = `
     <h2>Mi perfil</h2>
     <div class="card">
-      <div class="row"><strong>${esc(state.profile.displayName || 'Usuario')}</strong>
+      <div class="row"><strong>${esc(name)}</strong>
         <span class="tag pending">${ROLE_LABEL[state.role] || state.role}</span></div>
       <div class="meta">${esc(state.profile.email || '')}</div>
     </div>
-    ${isFamilia() ? `<h3>Datos de mi hijo/a</h3>` + (kids.length
+    <h3>Datos de mi hijo/a</h3>
+    ${kids.length
       ? kids.map(k => `<div class="card"><strong>${esc(k.firstName)} ${esc(k.lastName || '')}</strong>
           <div class="meta">Grupo: ${esc(k.group || '—')}</div></div>`).join('')
-      : emptyBox('👧', 'Aún no hay alumnos vinculados a tu familia.')) : ''}
+      : emptyBox('👧', 'Aún no hay alumnos vinculados a tu familia.')}
     <button class="btn danger block" data-action="sign-out">Cerrar sesión</button>`;
 }
 ACTIONS['sign-out'] = async () => { await signOut(auth); };
+ACTIONS['profile-info'] = () => {
+  alert(`Nombre: ${state.profile.displayName || '—'}\nCorreo: ${state.profile.email || '—'}\nRol: ${ROLE_LABEL[state.role] || state.role}`);
+};
 
 function renderMore() {
   const fam = !isMonitor();
