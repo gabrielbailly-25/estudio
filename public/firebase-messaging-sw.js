@@ -27,4 +27,10 @@ messaging.onBackgroundMessage((payload) => {
   const title = (payload.notification && payload.notification.title) || 'Estudio Dirigido Glera';
   const options = { body: (payload.notification && payload.notification.body) || '', icon: '/icon-192.png' };
   self.registration.showNotification(title, options);
+  try {
+    if ('setAppBadge' in navigator) {
+      const n = parseInt((payload.data && payload.data.unreadCount) || '0', 10);
+      if (n > 0) { navigator.setAppBadge(n); } else { navigator.setAppBadge(); }
+    }
+  } catch (e) {}
 });
