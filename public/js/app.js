@@ -1377,27 +1377,30 @@ ACTIONS['wipe-all-data'] = async () => {
   if (confirmation !== 'BORRAR') { toast('Cancelado.'); return; }
   if (!confirm('¿Seguro? Se eliminarán alumnos, familias, chats, avisos, informes y todo lo demás.')) return;
   toast('Borrando datos…');
+  const safeGet = async (colRef) => {
+    try { return (await getDocs(colRef)).docs; } catch (e) { console.warn('No se pudo leer', colRef.path, e); return []; }
+  };
+  const safeDel = async (ref) => {
+    try { await deleteDoc(ref); } catch (e) { console.warn('No se pudo borrar', ref.path, e); }
+  };
   try {
     // Subcolecciones de autorizaciones (firmas) antes de borrar las autorizaciones.
-    const asnap = await getDocs(collection(db, 'authorizations'));
-    for (const a of asnap.docs) {
-      const ssnap = await getDocs(collection(db, 'authorizations', a.id, 'signatures'));
-      for (const s of ssnap.docs) { try { await deleteDoc(s.ref); } catch (e) {} }
+    for (const a of await safeGet(collection(db, 'authorizations'))) {
+      for (const s of await safeGet(collection(db, 'authorizations', a.id, 'signatures'))) {
+        await safeDel(s.ref);
+      }
     }
     // Colecciones principales.
     for (const col of ['students', 'conversations', 'messages', 'notices', 'reports',
                        'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems']) {
-      const snap = await getDocs(collection(db, col));
-      for (const d of snap.docs) { try { await deleteDoc(d.ref); } catch (e) {} }
+      for (const d of await safeGet(collection(db, col))) await safeDel(d.ref);
     }
     // Usuarios: borra todos excepto el admin actual (con sus subcolecciones).
-    const usnap = await getDocs(collection(db, 'users'));
-    for (const u of usnap.docs) {
+    for (const u of await safeGet(collection(db, 'users'))) {
       for (const sub of ['notifications', 'pushTokens']) {
-        const ssnap = await getDocs(collection(db, 'users', u.id, sub));
-        for (const s of ssnap.docs) { try { await deleteDoc(s.ref); } catch (e) {} }
+        for (const s of await safeGet(collection(db, 'users', u.id, sub))) await safeDel(s.ref);
       }
-      if (u.id !== state.user.uid) { try { await deleteDoc(u.ref); } catch (e) {} }
+      if (u.id !== state.user.uid) await safeDel(u.ref);
     }
     toast('Todos los datos han sido eliminados.');
   } catch (err) {
