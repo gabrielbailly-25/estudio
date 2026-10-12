@@ -54,14 +54,16 @@ service cloud.firestore {
       // Tokens push del propio dispositivo.
       match /pushTokens/{tokenId} {
         allow read, write: if signedIn() && myUid() == uid;
+        allow delete: if isAdmin();
       }
       // Centro de notificaciones: lo escribe el backend (Functions).
       // El usuario solo puede marcarlas como leídas.
       match /notifications/{notifId} {
-        allow read: if signedIn() && myUid() == uid;
+        allow read: if signedIn() && (myUid() == uid || isAdmin());
         allow update: if signedIn() && myUid() == uid
                       && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-        allow create, delete: if false;
+        allow create: if false;
+        allow delete: if isAdmin();
       }
     }
 
@@ -125,7 +127,8 @@ service cloud.firestore {
       match /signatures/{uid} {
         allow read: if signedIn();
         allow create: if signedIn() && myUid() == uid;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isAdmin();
       }
     }
 
