@@ -469,6 +469,7 @@ ACTIONS['confirm-notice-read'] = async (d) => {
 
 async function renderHome() {
   const c = $('home-content');
+  try {
   const fam = !isMonitor();
   const nombre = (state.profile.displayName || '').split(' ')[0] || (fam ? 'familia' : 'monitor');
   const child = fam ? (state.children.find(x => x.id === state.selectedChildId) || state.children[0]) : null;
@@ -610,6 +611,16 @@ async function renderHome() {
         <button class="text-btn" data-action="go" data-screen="notices">Ver tablón →</button>
       </div></div>
     </div>`;
+  } catch (err) {
+    console.error('Error crítico en Inicio:', err);
+    c.innerHTML = `
+      <div class="card" style="text-align:center;padding:32px 16px">
+        <p style="font-size:40px;margin:0">😕</p>
+        <h3>No se pudo cargar el inicio</h3>
+        <p class="muted">Ha ocurrido un error inesperado.</p>
+        <button class="btn" data-action="go" data-screen="home">Reintentar</button>
+      </div>`;
+  }
 }
 
 async function renderNoticeCompose() {
