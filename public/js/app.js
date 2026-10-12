@@ -1376,39 +1376,44 @@ ACTIONS['wipe-all-data'] = async () => {
   const confirmation = prompt('Para borrar TODOS los datos escribe BORRAR:');
   if (confirmation !== 'BORRAR') { toast('Cancelado.'); return; }
   if (!confirm('¿Seguro? Se eliminarán alumnos, familias, chats, avisos, informes y todo lo demás.')) return;
-  toast('Borrando datos…');
-  const safeGet = async (colRef) => {
-    try { return (await getDocs(colRef)).docs; } catch (e) { console.warn('No se pudo leer', colRef.path, e); return []; }
+  toast('Borrando datos… esto puede tardar un poco.');
+  const stats = { ok: 0, fail: 0, fails: [] };
+  const safeGet = async (label, colRef) => {
+    try { return (await getDocs(colRef)).docs; }
+    catch (e) { stats.fail++; stats.fails.push(`leer ${label}`); return []; }
   };
-  const safeDel = async (ref) => {
-    try { await deleteDoc(ref); } catch (e) { console.warn('No se pudo borrar', ref.path, e); }
+  const safeDel = async (label, ref) => {
+    try { await deleteDoc(ref); stats.ok++; }
+    catch (e) { stats.fail++; if (stats.fails.length < 8) stats.fails.push(`borrar ${label}`); }
   };
-  try {
-    // Subcolecciones de autorizaciones (firmas) antes de borrar las autorizaciones.
-    for (const a of await safeGet(collection(db, 'authorizations'))) {
-      for (const s of await safeGet(collection(db, 'authorizations', a.id, 'signatures'))) {
-        await safeDel(s.ref);
-      }
+  // Subcolecciones de autorizaciones (firmas) antes de borrar las autorizaciones.
+  for (const a of await safeGet('autorizaciones', collection(db, 'authorizations'))) {
+    for (const s of await safeGet('firmas', collection(db, 'authorizations', a.id, 'signatures'))) {
+      await safeDel('firma', s.ref);
     }
-    // Colecciones principales.
-    for (const col of ['students', 'conversations', 'messages', 'notices', 'reports',
-                       'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems']) {
-      for (const d of await safeGet(collection(db, col))) await safeDel(d.ref);
+  }
+  // Colecciones principales.
+  for (const col of ['students', 'conversations', 'messages', 'notices', 'reports',
+                     'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems']) {
+    for (const d of await safeGet(col, collection(db, col))) await safeDel(col, d.ref);
+  }
+  // Usuarios: borra todos excepto el admin actual (con sus subcolecciones).
+  for (const u of await safeGet('usuarios', collection(db, 'users'))) {
+    for (const sub of ['notifications', 'pushTokens']) {
+      for (const s of await safeGet(sub, collection(db, 'users', u.id, sub))) await safeDel(sub, s.ref);
     }
-    // Usuarios: borra todos excepto el admin actual (con sus subcolecciones).
-    for (const u of await safeGet(collection(db, 'users'))) {
-      for (const sub of ['notifications', 'pushTokens']) {
-        for (const s of await safeGet(collection(db, 'users', u.id, sub))) await safeDel(s.ref);
-      }
-      if (u.id !== state.user.uid) await safeDel(u.ref);
-    }
-    toast('Todos los datos han sido eliminados.');
-  } catch (err) {
-    console.error(err);
-    toast('Error al borrar. Revisa qué datos quedan.');
+    if (u.id !== state.user.uid) await safeDel('usuario', u.ref);
   }
   // Recarga el estado local.
   state.students = []; state.children = [];
+  if (stats.fail === 0) {
+    toast(`Borrado completo: ${stats.ok} elementos eliminados.`);
+  } else {
+    alert(`Se eliminaron ${stats.ok} elementos, pero ${stats.fail} fallaron.\n\n` +
+      `Fallos: ${[...new Set(stats.fails)].join(', ')}.\n\n` +
+      `Causa más probable: las reglas de Firestore no están publicadas.\n` +
+      `Ve a Firebase console → Firestore → Reglas → Publicar, y vuelve a intentarlo.`);
+  }
   renderUsers();
 };
 
