@@ -460,6 +460,48 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 }
 .menu-row.big .menu-ico svg { width: 34px; height: 34px; }
 .menu-row.big .menu-label { flex: 1; font-size: 16px; }
+.avatar-lg {
+  width: 84px; height: 84px; border-radius: 50%;
+  background: var(--brand); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: 800 30px "Manrope";
+}
+
+/* ---------- Pasar lista ---------- */
+.att-row {
+  display: flex; gap: 12px; align-items: center;
+  padding: 12px 0; border-bottom: 1px solid var(--line);
+}
+.att-row:last-child { border-bottom: none; }
+.seg-att { display: flex; gap: 4px; background: var(--surface-2); border-radius: 12px; padding: 4px; }
+.seg-att button {
+  border: none; background: transparent; padding: 8px 12px; border-radius: 8px;
+  font: 700 13px "Manrope"; color: var(--muted); cursor: pointer;
+}
+.seg-att button.on { background: var(--brand); color: #fff; }
+.seg-att button.on.no { background: var(--danger); }
+.seg-att button.on.maybe { background: var(--accent); }
+
+/* ---------- Evaluación diaria ---------- */
+.eval-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
+}
+.eval-label { font-weight: 700; }
+.seg-nums { display: flex; gap: 6px; }
+.seg-nums button {
+  width: 44px; height: 44px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface);
+  font: 700 16px "Manrope"; cursor: pointer;
+}
+.seg-nums button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+.progress {
+  height: 8px; border-radius: 4px; background: var(--surface-2);
+  margin-top: 12px; overflow: hidden;
+}
+.progress-bar { height: 100%; background: var(--brand); border-radius: 4px; transition: width .3s; }
+.auth-card-head { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.auth-card-head h3 { font-size: 16px; }
 
 /* ---------- Toast ---------- */
 .toast, #toast {
