@@ -218,7 +218,7 @@ function renderNav() {
       { id: 'home', label: 'Inicio', icon: 'home' },
       { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
       { id: 'evaluate', label: 'Evaluar', icon: 'evaluate' },
-      ...(isAdmin() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
+      ...(isMonitor() ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
       { id: 'chatList', label: 'Chat', icon: 'chat' },
       { id: 'more', label: 'Más', icon: 'more' },
     ];
@@ -1578,7 +1578,8 @@ ACTIONS['toggle-push'] = async () => {
 
 /* ---------------- Usuarios (solo admin) ---------------- */
 async function renderUsers() {
-  if (!isAdmin()) { show('home'); return; }
+  if (!isMonitor()) { show('home'); return; }
+  const admin = isAdmin();
   const c = $('users-content');
   const [usnap, ssnap] = await Promise.all([
     getDocs(query(collection(db, 'users'), orderBy('displayName'))),
@@ -1590,7 +1591,10 @@ async function renderUsers() {
   const es = state.editingStudentId ? students.find(s => s.id === state.editingStudentId) : null;
   if (state.editingStudentId && !es) state.editingStudentId = null; // el alumno en edición ya no existe
   const esFam = es ? (es.familyUids || []) : [];
+  // Al crear, un monitor propone su propio nombre como responsable.
+  const defaultMonitor = !es && !admin ? (state.profile.displayName || '') : '';
   c.innerHTML = `
+    ${admin ? `
     <div class="section-head"><div><h3>Usuarios</h3>
       <p>Cambia el rol de cada usuario.</p></div>
       <span class="badge info">${users.length}</span></div>
@@ -1610,8 +1614,8 @@ async function renderUsers() {
           </div>
         </div>`).join('')
       : emptyBox('👥', 'Aún no hay usuarios registrados.')}
-    </div>
-    <div class="section-head" style="margin-top:24px"><div><h3>Alumnos</h3>
+    </div>` : ''}
+    <div class="section-head" style="margin-top:${admin ? '24px' : '0'}"><div><h3>Alumnos</h3>
       <p>Da de alta alumnos y vincúlalos a sus familias.</p></div></div>
     <div class="item-list">
       ${students.length ? students.map(s => `
@@ -1637,7 +1641,7 @@ async function renderUsers() {
       <label for="ns-group">Grupo</label>
       <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off" value="${esc(es?.group || '')}">
       <label for="ns-monitor">Monitor responsable</label>
-      <input type="text" id="ns-monitor" maxlength="80" autocomplete="off" value="${esc(es?.monitorName || '')}">
+      <input type="text" id="ns-monitor" maxlength="80" autocomplete="off" value="${esc(es?.monitorName || defaultMonitor)}">
       <label for="ns-schedule">Horario habitual</label>
       <input type="text" id="ns-schedule" maxlength="60" placeholder="Ej.: L–J · 17:00–18:30" autocomplete="off" value="${esc(es?.schedule || '')}">
       <label for="ns-classroom">Aula habitual</label>
