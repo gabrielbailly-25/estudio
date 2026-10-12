@@ -279,6 +279,43 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 .notif.read { opacity: .75; }
 .notif.read .dot { background: var(--line); }
 
+/* ---------- Tarjetas de notificaciones ---------- */
+.notif-card {
+  display: flex; gap: 12px; align-items: flex-start;
+  cursor: pointer; position: relative;
+}
+.notif-card.read { opacity: .8; }
+.notif-ico {
+  font-size: 26px; flex: 0 0 auto;
+  width: 44px; height: 44px; border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--brand-soft);
+}
+.notif-main { flex: 1; min-width: 0; }
+.notif-main h4 { margin: 8px 0 4px; font-size: 16px; }
+.notif-main p { margin: 0 0 6px; }
+.notif-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag-unread { background: var(--accent-soft); color: var(--accent); }
+.tag-read { background: var(--brand-soft); color: var(--brand); }
+.unread-dot {
+  position: absolute; left: 10px; top: 18px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand);
+}
+.notif-card .text-btn { flex: 0 0 auto; margin-top: 2px; }
+
+/* ---------- Cobertura de alertas ---------- */
+.coverage-pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill {
+  border: 1px solid var(--line); background: var(--surface);
+  color: var(--muted); border-radius: 999px;
+  padding: 8px 14px; font: 700 13px "Manrope"; cursor: pointer;
+}
+.pill.on {
+  background: var(--brand-soft); border-color: var(--brand-soft);
+  color: var(--brand);
+}
+
 /* ---------- Menú "Más" ---------- */
 .menu-list { display: flex; flex-direction: column; padding: 6px 20px; }
 .menu-row {
