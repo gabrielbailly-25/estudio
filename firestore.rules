@@ -109,7 +109,10 @@ service cloud.firestore {
     // ---------- Avisos / tablón de anuncios ----------
     match /notices/{noticeId} {
       allow read: if signedIn();
-      allow create, update, delete: if isMonitor();
+      allow create, delete: if isMonitor();
+      // Monitores editan todo; las familias solo pueden confirmar lectura.
+      allow update: if isMonitor()
+                    || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']));
     }
 
     // ---------- Autorizaciones ----------
