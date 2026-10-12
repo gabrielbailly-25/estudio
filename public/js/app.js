@@ -1624,20 +1624,25 @@ ACTIONS['wipe-all-data'] = async () => {
 ACTIONS['contact-monitor'] = async () => {
   const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
   if (!child) { toast('Aún no hay alumnos vinculados a tu familia.'); return; }
-  const msnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'monitor'), limit(5)));
-  if (msnap.empty) { toast('Aún no hay profesores dados de alta.'); return; }
-  const m = msnap.docs[0];
-  // Reutiliza la conversación existente con ese monitor para este alumno, si la hay.
+  // Busca una conversación existente sobre este hijo (con su profesor).
   const csnap = await getDocs(query(collection(db, 'conversations'),
     where('participantUids', 'array-contains', state.user.uid),
     orderBy('updatedAt', 'desc'), limit(30)));
-  const existing = csnap.docs.find(d => {
-    const p = d.data();
-    return p.studentId === child.id && (p.participantUids || []).includes(m.id);
-  });
+  const existing = csnap.docs.find(d => d.data().studentId === child.id);
   if (existing) { openChat(existing.id); return; }
+  // Si no la hay, usa el profesor que dio de alta al alumno (createdByUid).
+  let teacherUid = child.createdByUid || null;
+  if (teacherUid) {
+    const tsnap = await getDoc(doc(db, 'users', teacherUid));
+    if (!tsnap.exists() || !['monitor', 'admin'].includes(tsnap.data().role)) teacherUid = null;
+  }
+  if (!teacherUid) {
+    const msnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'monitor'), limit(5)));
+    if (msnap.empty) { toast('Aún no hay profesores dados de alta.'); return; }
+    teacherUid = msnap.docs[0].id;
+  }
   const ref = await addDoc(collection(db, 'conversations'), {
-    participantUids: [state.user.uid, m.id],
+    participantUids: [state.user.uid, teacherUid],
     studentId: child.id,
     studentName: `${child.firstName} ${child.lastName || ''}`.trim(),
     lastMessageText: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
