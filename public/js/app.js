@@ -1365,6 +1365,28 @@ function subscribeNotifications() {
     });
 }
 
+const NOTIF_TYPE_LABEL = {
+  chat: 'Mensaje',
+  report: 'Informe',
+  notice: 'Aviso',
+  authorization: 'Autorización',
+  evaluation: 'Evaluación',
+  attendance: 'Incidencia',
+};
+// Cobertura de alertas: qué tipos de aviso quiere recibir el usuario.
+const COVERAGE_CATS = [
+  { key: 'incidencias', label: 'Incidencias' },
+  { key: 'chat', label: 'Chat' },
+  { key: 'informe_diario', label: 'Informe diario' },
+  { key: 'informe_mensual', label: 'Informe mensual' },
+  { key: 'avisos', label: 'Avisos' },
+  { key: 'respuestas', label: 'Respuestas' },
+];
+const notifTypeLabel = (n) => {
+  if (n.type === 'report') return n.reportType === 'mensual' ? 'Informe mensual' : 'Informe diario';
+  return NOTIF_TYPE_LABEL[n.type] || 'Aviso';
+};
+
 async function renderNotifications() {
   const c = $('notifications-content');
   const ps = pushStatus();
@@ -1387,23 +1409,55 @@ async function renderNotifications() {
     </div>`;
   const snap = await getDocs(query(collection(db, 'users', state.user.uid, 'notifications'),
     orderBy('createdAt', 'desc'), limit(50)));
+  const cov = (state.profile && state.profile.alertCoverage) || {};
   c.innerHTML = pushCard + `
     <div class="screen-head"><h2>Notificaciones</h2>
       ${snap.size ? `<button class="btn small secondary" data-action="read-all-notif">Marcar leídas</button>` : ''}
-    </div><div id="notif-list"></div>`;
+    </div><div id="notif-list"></div>
+    <div class="card" style="margin-top:16px">
+      <h3>Cobertura de alertas</h3>
+      <p class="muted" style="margin:4px 0 12px">Elige qué avisos quieres recibir.</p>
+      <div class="coverage-pills">
+        ${COVERAGE_CATS.map(cat => `
+          <button class="pill ${cov[cat.key] !== false ? 'on' : ''}" data-action="toggle-coverage" data-key="${cat.key}">${cat.label}</button>`).join('')}
+      </div>
+    </div>`;
   $('notif-list').innerHTML = snap.empty
     ? emptyBox('🔔', 'No tienes notificaciones.')
     : snap.docs.map(d => {
       const n = d.data();
-      return `<div class="card notif ${n.read ? 'read' : ''}" data-action="open-notif" data-id="${d.id}">
-        <span class="dot"></span>
-        <div><strong>${esc(n.title)}</strong>
+      return `<article class="card notif-card ${n.read ? 'read' : ''}" data-action="open-notif" data-id="${d.id}">
+        ${!n.read ? '<span class="unread-dot"></span>' : ''}
+        <span class="notif-ico">🔔</span>
+        <div class="notif-main">
+          <div class="notif-tags">
+            <span class="tag">${esc(notifTypeLabel(n))}</span>
+            <span class="tag ${n.read ? 'tag-read' : 'tag-unread'}">${n.read ? 'Leída' : 'Sin leer'}</span>
+          </div>
+          <h4>${esc(n.title)}</h4>
           <p class="muted">${esc(n.body || '')}</p>
-          <div class="meta">${tsToDate(n.createdAt)}</div></div>
-      </div>`;
+          <div class="meta">${tsToDate(n.createdAt)}</div>
+        </div>
+        <span class="text-btn">Abrir</span>
+      </article>`;
     }).join('');
   updateAppBadge(snap.docs.filter(d => !d.data().read).length);
 }
+
+ACTIONS['toggle-coverage'] = async (d, el) => {
+  const key = el.dataset.key;
+  const cov = { ...((state.profile && state.profile.alertCoverage) || {}) };
+  cov[key] = !(cov[key] !== false);
+  try {
+    await updateDoc(doc(db, 'users', state.user.uid), { alertCoverage: cov });
+    state.profile.alertCoverage = cov;
+    toast('Preferencia guardada.');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo guardar.');
+  }
+  renderNotifications();
+};
 ACTIONS['read-all-notif'] = async () => {
   const snap = await getDocs(query(collection(db, 'users', state.user.uid, 'notifications'),
     where('read', '==', false)));
