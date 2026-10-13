@@ -284,19 +284,33 @@ function initFirebase() {
 $('btn-google').addEventListener('click', async () => {
   if (!auth) { toast('Configura Firebase primero (ver README.md).'); return; }
   const provider = new GoogleAuthProvider();
-  // En móvil los popups suelen estar bloqueados: usa redirección.
-  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const btn = $('btn-google');
+  btn.disabled = true;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Accediendo…';
+  const restore = () => { btn.disabled = false; btn.innerHTML = originalText; };
   try {
-    if (isMobile) await signInWithRedirect(auth, provider);
-    else await signInWithPopup(auth, provider);
+    // Intenta popup primero (funciona en la mayoría de navegadores).
+    await signInWithPopup(auth, provider);
   } catch (err) {
-    console.error(err);
-    // Si el popup falla, intenta con redirección.
-    if (!isMobile && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user')) {
-      try { await signInWithRedirect(auth, provider); return; } catch (e) { console.error(e); }
+    console.error('Popup login:', err && err.code);
+    // Si el popup está bloqueado o falla, usa redirección (típico en móvil).
+    if (err && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' ||
+                err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-window-blocked' ||
+                err.code === 'auth/unauthorized-domain')) {
+      try {
+        toast('Abriendo Google…');
+        await signInWithRedirect(auth, provider);
+        return; // La página navega a Google; no restaurar el botón.
+      } catch (e) {
+        console.error('Redirect login:', e);
+        toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
+      }
+    } else {
+      toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
     }
-    toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
   }
+  restore();
 });
 
 function watchAuth() {
