@@ -1645,10 +1645,10 @@ ACTIONS['contact-monitor'] = async () => {
     where('participantUids', 'array-contains', state.user.uid), limit(30)));
   const existing = csnap.docs.find(d => d.data().studentId === child.id);
   if (existing) { openChat(existing.id); return; }
-  // Si no la hay, usa el profesor que dio de alta al alumno (createdByUid).
+  // Si no la hay, usa el profesor vinculado al alumno (teacherUid).
   // No se lee su ficha ni se lista usuarios: las familias no tienen permiso.
-  const teacherUid = child.createdByUid || null;
-  if (!teacherUid) { toast('No se encontró al profesor del alumno.'); return; }
+  const teacherUid = child.teacherUid || child.createdByUid || null;
+  if (!teacherUid) { toast('Este alumno no tiene profesor asignado.'); return; }
   const ref = await addDoc(collection(db, 'conversations'), {
     participantUids: [state.user.uid, teacherUid],
     studentId: child.id,
@@ -2280,11 +2280,12 @@ async function renderUsers() {
   const users = usnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const students = ssnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const familias = users.filter(u => u.role === 'familia');
+  const profesores = users.filter(u => u.role === 'monitor');
   const es = state.editingStudentId ? students.find(s => s.id === state.editingStudentId) : null;
   if (state.editingStudentId && !es) state.editingStudentId = null; // el alumno en edición ya no existe
   const esFam = es ? (es.familyUids || []) : [];
-  // Al crear, un monitor propone su propio nombre como responsable.
-  const defaultMonitor = !es && !admin ? (state.profile.displayName || '') : '';
+  // Profesor por defecto al crear: el propio monitor (si lo es).
+  const defaultTeacherUid = !es && !admin ? state.user.uid : '';
   c.innerHTML = `
     ${admin ? `
     <div class="section-head"><div><h3>Usuarios</h3>
@@ -2332,8 +2333,12 @@ async function renderUsers() {
       <input type="text" id="ns-last" maxlength="80" autocomplete="off" value="${esc(es?.lastName || '')}">
       <label for="ns-group">Grupo</label>
       <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off" value="${esc(es?.group || '')}">
-      <label for="ns-monitor">Profesor responsable</label>
-      <input type="text" id="ns-monitor" maxlength="80" autocomplete="off" value="${esc(es?.monitorName || defaultMonitor)}">
+      <label for="ns-teacher">Profesor responsable</label>
+      <select id="ns-teacher">
+        <option value="">— Sin asignar —</option>
+        ${profesores.map(p => `
+          <option value="${p.id}" ${(es?.teacherUid || defaultTeacherUid) === p.id ? 'selected' : ''}>${esc(p.displayName || p.email || 'Sin nombre')}</option>`).join('')}
+      </select>
       <label for="ns-schedule">Horario habitual</label>
       <input type="text" id="ns-schedule" maxlength="60" placeholder="Ej.: L–J · 17:00–18:30" autocomplete="off" value="${esc(es?.schedule || '')}">
       <label for="ns-classroom">Aula habitual</label>
@@ -2409,12 +2414,17 @@ ACTIONS['create-student'] = async () => {
     const v = $(id).value.trim();
     return v ? { [key]: v } : (editing ? { [key]: deleteField() } : {});
   };
+  // Profesor responsable: desplegable con UID real (vinculación para el chat).
+  const teacherSel = $('ns-teacher');
+  const teacherUid = teacherSel.value || null;
+  const teacherName = teacherSel.selectedOptions[0]?.textContent?.trim() || null;
   const data = {
     firstName,
     lastName: $('ns-last').value.trim(),
     group: $('ns-group').value.trim(),
     familyUids,
-    ...opt('ns-monitor', 'monitorName'),
+    ...(teacherUid ? { teacherUid } : (editing ? { teacherUid: deleteField() } : {})),
+    ...(teacherName && teacherUid ? { monitorName: teacherName } : (editing ? { monitorName: deleteField() } : {})),
     ...opt('ns-schedule', 'schedule'),
     ...opt('ns-classroom', 'classroom'),
     ...opt('ns-start', 'startDate'),
