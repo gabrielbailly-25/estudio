@@ -1636,12 +1636,13 @@ ACTIONS['wipe-all-data'] = async () => {
 
 // La familia escribe al monitor: abre (o crea) la conversación con un monitor.
 ACTIONS['contact-monitor'] = async () => {
+  try {
   const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
   if (!child) { toast('Aún no hay alumnos vinculados a tu familia.'); return; }
   // Busca una conversación existente sobre este hijo (con su profesor).
+  // Sin orderBy para no depender del índice compuesto.
   const csnap = await getDocs(query(collection(db, 'conversations'),
-    where('participantUids', 'array-contains', state.user.uid),
-    orderBy('updatedAt', 'desc'), limit(30)));
+    where('participantUids', 'array-contains', state.user.uid), limit(30)));
   const existing = csnap.docs.find(d => d.data().studentId === child.id);
   if (existing) { openChat(existing.id); return; }
   // Si no la hay, usa el profesor que dio de alta al alumno (createdByUid).
@@ -1662,6 +1663,10 @@ ACTIONS['contact-monitor'] = async () => {
     lastMessageText: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
   openChat(ref.id);
+  } catch (err) {
+    console.error('Escribir al profesor:', err);
+    toast('No se pudo abrir el chat. Inténtalo de nuevo.');
+  }
 };
 
 async function openChat(convId, inline = false) {
