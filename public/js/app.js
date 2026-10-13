@@ -1646,16 +1646,9 @@ ACTIONS['contact-monitor'] = async () => {
   const existing = csnap.docs.find(d => d.data().studentId === child.id);
   if (existing) { openChat(existing.id); return; }
   // Si no la hay, usa el profesor que dio de alta al alumno (createdByUid).
-  let teacherUid = child.createdByUid || null;
-  if (teacherUid) {
-    const tsnap = await getDoc(doc(db, 'users', teacherUid));
-    if (!tsnap.exists() || !['monitor', 'admin'].includes(tsnap.data().role)) teacherUid = null;
-  }
-  if (!teacherUid) {
-    const msnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'monitor'), limit(5)));
-    if (msnap.empty) { toast('Aún no hay profesores dados de alta.'); return; }
-    teacherUid = msnap.docs[0].id;
-  }
+  // No se lee su ficha ni se lista usuarios: las familias no tienen permiso.
+  const teacherUid = child.createdByUid || null;
+  if (!teacherUid) { toast('No se encontró al profesor del alumno.'); return; }
   const ref = await addDoc(collection(db, 'conversations'), {
     participantUids: [state.user.uid, teacherUid],
     studentId: child.id,
