@@ -2057,8 +2057,20 @@ ACTIONS['read-all-notif'] = async () => {
   renderNotifications();
 };
 ACTIONS['open-notif'] = async (d) => {
+  const snap = await getDoc(doc(db, 'users', state.user.uid, 'notifications', d.id));
+  const n = snap.exists() ? snap.data() : {};
   await updateDoc(doc(db, 'users', state.user.uid, 'notifications', d.id), { read: true });
-  renderNotifications();
+  // Navega a la pantalla del contenido relacionado.
+  const screenByType = {
+    chat: 'chatList',
+    report: 'reports',
+    notice: 'notices',
+    authorization: 'auths',
+    evaluation: isMonitor() ? 'evaluate' : 'progress',
+    attendance: 'attendance',
+  };
+  const screen = screenByType[n.type] || 'notifications';
+  show(screen);
 };
 
 /* ---------------- Perfil y menú "Más" ---------------- */
