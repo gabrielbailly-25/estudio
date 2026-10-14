@@ -1639,16 +1639,17 @@ ACTIONS['contact-monitor'] = async () => {
   try {
   const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
   if (!child) { toast('Aún no hay alumnos vinculados a tu familia.'); return; }
-  // Busca una conversación existente sobre este hijo (con su profesor).
-  // Sin orderBy para no depender del índice compuesto.
-  const csnap = await getDocs(query(collection(db, 'conversations'),
-    where('participantUids', 'array-contains', state.user.uid), limit(30)));
-  const existing = csnap.docs.find(d => d.data().studentId === child.id);
-  if (existing) { openChat(existing.id); return; }
-  // Si no la hay, usa el profesor vinculado al alumno (teacherUid).
-  // No se lee su ficha ni se lista usuarios: las familias no tienen permiso.
   const teacherUid = child.teacherUid || child.createdByUid || null;
   if (!teacherUid) { toast('Este alumno no tiene profesor asignado.'); return; }
+  // Busca una conversación existente: primero sobre este hijo,
+  // si no, un chat directo con su profesor (para no crear duplicados).
+  // Sin orderBy para no depender del índice compuesto.
+  const csnap = await getDocs(query(collection(db, 'conversations'),
+    where('participantUids', 'array-contains', state.user.uid), limit(50)));
+  const convs = csnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const existing = convs.find(d => d.studentId === child.id)
+    || convs.find(d => (d.participantUids || []).includes(teacherUid));
+  if (existing) { openChat(existing.id); return; }
   const ref = await addDoc(collection(db, 'conversations'), {
     participantUids: [state.user.uid, teacherUid],
     studentId: child.id,
