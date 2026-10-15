@@ -1883,7 +1883,8 @@ async function renderCalendar() {
   const upcoming = sessions.slice(0, 5);
   c.innerHTML = `
     <div class="screen-head"><h2>Calendario</h2>
-      ${isMonitor() ? `<button class="btn small" data-action="toggle-session-form">+ Sesión</button>` : ''}
+      ${isMonitor() ? `<div><button class="btn small" data-action="toggle-session-form">+ Sesión</button>
+        <button class="btn small secondary" data-action="toggle-bulk-form">📅 Generar mes</button></div>` : ''}
     </div>
     <div id="session-form" class="hidden card">
       <label for="se-date">Fecha</label><input type="date" id="se-date" value="${todayStr()}">
@@ -1892,6 +1893,22 @@ async function renderCalendar() {
       <label for="se-title">Título</label><input type="text" id="se-title" placeholder="Estudio dirigido">
       <label for="se-room">Aula</label><input type="text" id="se-room" placeholder="Ej.: Aula 2">
       <button class="btn block" data-action="save-session">Guardar sesión</button>
+    </div>
+    <div id="bulk-form" class="hidden card">
+      <h3 style="margin:0 0 4px">Generar el mes de golpe</h3>
+      <p class="muted" style="margin:0 0 12px">Configura una semana tipo y se repite el resto del mes.</p>
+      <label for="bk-month">Mes</label>
+      <input type="month" id="bk-month" value="${todayStr().slice(0, 7)}">
+      <label>Días de la semana</label>
+      <div class="filters" style="margin:0 0 12px">
+        ${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d, i) => `
+          <label class="check" style="margin:0"><input type="checkbox" data-bulk-day="${(i + 1) % 7}" ${i < 4 ? 'checked' : ''}> ${d}</label>`).join('')}
+      </div>
+      <label for="bk-start">Hora de inicio</label><input type="time" id="bk-start" value="17:30">
+      <label for="bk-end">Hora de fin</label><input type="time" id="bk-end" value="19:00">
+      <label for="bk-title">Título</label><input type="text" id="bk-title" placeholder="Estudio dirigido">
+      <label for="bk-room">Aula</label><input type="text" id="bk-room" placeholder="Ej.: Aula 2">
+      <button class="btn block" data-action="generate-month">Generar sesiones del mes</button>
     </div>
     <div class="grid">
       <div class="col-7"><div class="card">
@@ -1925,6 +1942,43 @@ async function renderCalendar() {
     }).join('');
 }
 ACTIONS['toggle-session-form'] = () => $('session-form').classList.toggle('hidden');
+ACTIONS['toggle-bulk-form'] = () => $('bulk-form').classList.toggle('hidden');
+ACTIONS['generate-month'] = async () => {
+  const month = $('bk-month').value; // YYYY-MM
+  const days = [...document.querySelectorAll('[data-bulk-day]:checked')].map(x => Number(x.dataset.bulkDay));
+  const startTime = $('bk-start').value, endTime = $('bk-end').value;
+  const title = $('bk-title').value.trim() || 'Estudio dirigido';
+  const room = $('bk-room').value.trim();
+  if (!month) { toast('Elige un mes.'); return; }
+  if (!days.length) { toast('Marca al menos un día de la semana.'); return; }
+  if (!startTime || !endTime) { toast('Pon hora de inicio y fin.'); return; }
+  const [y, m] = month.split('-').map(Number);
+  const firstDay = `${month}-01`;
+  const lastDay = new Date(y, m, 0).getDate(); // días del mes
+  // Sesiones ya existentes en el mes (para no duplicar).
+  const existingSnap = await getDocs(query(collection(db, 'sessions'),
+    where('date', '>=', firstDay), where('date', '<=', `${month}-${String(lastDay).padStart(2, '0')}`)));
+  const existingKeys = new Set(existingSnap.docs.map(d => {
+    const s = d.data();
+    return `${s.date}|${s.startTime}`;
+  }));
+  const today = todayStr();
+  let created = 0, skipped = 0;
+  for (let day = 1; day <= lastDay; day++) {
+    const date = `${month}-${String(day).padStart(2, '0')}`;
+    if (date < today) continue; // no crea sesiones pasadas
+    const wd = new Date(y, m - 1, day).getDay();
+    if (!days.includes(wd)) continue;
+    if (existingKeys.has(`${date}|${startTime}`)) { skipped++; continue; }
+    await addDoc(collection(db, 'sessions'), {
+      date, startTime, endTime, title, room,
+      createdByUid: state.user.uid, createdAt: serverTimestamp(),
+    });
+    created++;
+  }
+  toast(created ? `Se crearon ${created} sesiones.${skipped ? ` ${skipped} ya existían.` : ''}` : 'No había sesiones nuevas que crear.');
+  renderCalendar();
+};
 ACTIONS['save-session'] = async () => {
   await addDoc(collection(db, 'sessions'), {
     date: $('se-date').value, startTime: $('se-start').value, endTime: $('se-end').value,
