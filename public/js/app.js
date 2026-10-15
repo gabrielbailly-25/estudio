@@ -1877,10 +1877,32 @@ ACTIONS['publish-auth'] = async () => {
 /* ---------------- Calendario de sesiones ---------------- */
 async function renderCalendar() {
   const c = $('calendar-content');
-  const snap = await getDocs(query(collection(db, 'sessions'),
-    where('date', '>=', todayStr()), orderBy('date', 'asc'), limit(30)));
-  const sessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const upcoming = sessions.slice(0, 5);
+  // Mes mostrado (por defecto, el actual).
+  if (!state.calMonth) state.calMonth = todayStr().slice(0, 7);
+  const [cy, cm] = state.calMonth.split('-').map(Number);
+  const monthStart = `${state.calMonth}-01`;
+  const lastDay = new Date(cy, cm, 0).getDate();
+  const monthEnd = `${state.calMonth}-${String(lastDay).padStart(2, '0')}`;
+  const [snap, upcomingSnap] = await Promise.all([
+    getDocs(query(collection(db, 'sessions'),
+      where('date', '>=', monthStart), where('date', '<=', monthEnd), orderBy('date', 'asc'))),
+    getDocs(query(collection(db, 'sessions'),
+      where('date', '>=', todayStr()), orderBy('date', 'asc'), limit(5))),
+  ]);
+  const monthSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const upcoming = upcomingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const datesWithSession = new Set(monthSessions.map(s => s.date));
+  // Celdas del mes: desde el lunes de la primera semana.
+  const firstWeekday = (new Date(cy, cm - 1, 1).getDay() + 6) % 7; // 0 = lunes
+  const today = todayStr();
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) {
+    const prevDate = new Date(cy, cm - 1, 1 - firstWeekday + i);
+    cells.push({ date: prevDate.toISOString().slice(0, 10), label: prevDate.getDate(), other: true });
+  }
+  for (let day = 1; day <= lastDay; day++) {
+    cells.push({ date: `${state.calMonth}-${String(day).padStart(2, '0')}`, label: day, other: false });
+  }
   c.innerHTML = `
     <div class="screen-head"><h2>Calendario</h2>
       ${isMonitor() ? `<div><button class="btn small" data-action="toggle-session-form">+ Sesión</button>
@@ -1911,11 +1933,24 @@ async function renderCalendar() {
       <button class="btn block" data-action="generate-month">Generar sesiones del mes</button>
     </div>
     <div class="grid">
-      <div class="col-7"><div class="card">
+      <div class="col-7"><div class="card cal-card">
         <div class="cal-head">
-          <h3 style="margin:0">Próximas fechas</h3>
+          <button class="icon-btn" data-action="cal-prev" aria-label="Mes anterior">‹</button>
+          <h3>${MESES_LARGO[cm - 1][0].toUpperCase() + MESES_LARGO[cm - 1].slice(1)} ${cy}</h3>
+          <button class="icon-btn" data-action="cal-next" aria-label="Mes siguiente">›</button>
         </div>
-        <div id="sessions-list"></div>
+        <div class="cal-grid cal-weekdays">
+          ${['L', 'M', 'X', 'J', 'V', 'S', 'D'].map(d => `<span>${d}</span>`).join('')}
+        </div>
+        <div class="cal-grid">
+          ${cells.map(cell => {
+            const has = datesWithSession.has(cell.date);
+            const isToday = cell.date === today;
+            return `<button class="cal-day ${cell.other ? 'other' : ''} ${isToday ? 'today' : ''} ${has ? 'has-session' : ''}" data-action="cal-day" data-date="${cell.date}">
+              <span>${cell.label}</span>${has ? '<span class="cal-dot"></span>' : ''}
+            </button>`;
+          }).join('')}
+        </div>
       </div></div>
       <div class="col-5">
         <h3>Próximas sesiones</h3>
@@ -1931,18 +1966,21 @@ async function renderCalendar() {
         }).join('') : emptyBox('📅', 'Aún no hay sesiones programadas.')}
       </div>
     </div>`;
-  $('sessions-list').innerHTML = snap.empty
-    ? emptyBox('📅', 'Aún no hay sesiones programadas.')
-    : sessions.map(s => {
-      return `<div class="history-line">
-        <div><strong>${fmtDateLong(s.date)}</strong>
-          <div class="meta">${esc(s.startTime || '')}–${esc(s.endTime || '')}${s.room ? ' · ' + esc(s.room) : ''}</div></div>
-        <span class="meta">${esc(s.title || '')}</span>
-      </div>`;
-    }).join('');
 }
 ACTIONS['toggle-session-form'] = () => $('session-form').classList.toggle('hidden');
 ACTIONS['toggle-bulk-form'] = () => $('bulk-form').classList.toggle('hidden');
+ACTIONS['cal-prev'] = () => {
+  const [y, m] = state.calMonth.split('-').map(Number);
+  const prev = new Date(y, m - 2, 1);
+  state.calMonth = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  renderCalendar();
+};
+ACTIONS['cal-next'] = () => {
+  const [y, m] = state.calMonth.split('-').map(Number);
+  const next = new Date(y, m, 1);
+  state.calMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  renderCalendar();
+};
 ACTIONS['generate-month'] = async () => {
   const month = $('bk-month').value; // YYYY-MM
   const days = [...document.querySelectorAll('[data-bulk-day]:checked')].map(x => Number(x.dataset.bulkDay));
