@@ -444,14 +444,14 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 }
 .cal-day.other { color: var(--muted); opacity: .5; }
 .cal-day.today { background: var(--brand); color: #fff; font-weight: 800; }
-.cal-day.session-day { background: var(--brand-soft); font-weight: 700; }
+.cal-day.session-day { background: var(--blue-soft); font-weight: 700; }
 .cal-day.today.session-day { background: var(--brand); color: #fff; }
 .cal-day.st-presente { background: #d7ecdd; font-weight: 700; }
 .cal-day.st-ausente { background: #fbe0dc; font-weight: 700; }
 .cal-day.st-justificado { background: #fff0df; font-weight: 700; }
 .cal-day.today.st-presente, .cal-day.today.st-ausente, .cal-day.today.st-justificado { outline: 2px solid var(--brand); outline-offset: -2px; }
 .cal-chip { display: inline-block; width: 14px; height: 14px; border-radius: 4px; margin-right: 4px; vertical-align: middle; }
-.cal-chip.session-day { background: var(--brand-soft); }
+.cal-chip.session-day { background: var(--blue-soft); }
 .cal-chip.st-presente { background: #d7ecdd; }
 .cal-chip.st-ausente { background: #fbe0dc; }
 .cal-chip.st-justificado { background: #fff0df; }
