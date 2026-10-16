@@ -29,7 +29,7 @@ const state = {
   attMarks: {},     // marcas temporales al pasar lista
   evalMarks: {},    // marcas temporales al evaluar (clave: id del ítem)
   evalItems: [],    // ítems de evaluación configurables (colección evalItems)
-  reportFilter: 'all', // filtro de informes en vista familia: all | diario | mensual
+  reportFilter: 'all', // filtro de informes en vista familia: all | diario | trimestral
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   editingNoticeId: null, // aviso en edición (null = crear nuevo)
   editingStudentId: null, // alumno en edición en la pantalla Usuarios (null = crear nuevo)
@@ -69,7 +69,7 @@ const TITLES = {
   reportCompose: 'Nuevo informe', chatList: 'Chat', chatView: 'Chat',
   auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
   noticeCompose: 'Nuevo aviso', calendar: 'Calendario', notifications: 'Notificaciones',
-  profile: 'Mi perfil', more: 'Más', users: 'Usuarios',
+  profile: 'Mi perfil', users: 'Usuarios',
   evalItems: 'Ítems de evaluación', child: 'Mi hijo', notices: 'Avisos',
 };
 
@@ -140,8 +140,11 @@ const fechaLargaHoy = () => {
   const s = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
-// Tipo de informe: 'diario' | 'mensual' (los antiguos con mes cuentan como mensuales).
-const reportType = (r) => r.type || (r.month ? 'mensual' : 'diario');
+// Tipo de informe: 'diario' | 'trimestral' (los antiguos 'mensual' cuentan como trimestrales).
+const reportType = (r) => {
+  const t = r.type || (r.month ? 'trimestral' : 'diario');
+  return t === 'mensual' ? 'trimestral' : t;
+};
 // Puntuaciones de una evaluación como [{label, value}]; compatible con el formato
 // antiguo (campos puntualidad/agenda/aprovechamiento) y el nuevo (mapa scores).
 function evalScores(e) {
@@ -199,7 +202,7 @@ ACTIONS.go = (d) => show(d.screen);
 // El login es un overlay aparte (loginOverlay); aquí solo pantallas de la app.
 const SCREENS = ['home', 'attendance', 'evaluate', 'progress', 'reports',
   'reportDetail', 'reportCompose', 'chatList', 'chatView', 'auths', 'authDetail',
-  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'more', 'users',
+  'authCompose', 'noticeCompose', 'calendar', 'notifications', 'profile', 'users',
   'evalItems', 'child', 'notices'];
 const RENDER = {};
 
@@ -221,8 +224,8 @@ function setLoggedOut(out) {
 
 /* ---------------- Navegación (según rol) ---------------- */
 function renderNav() {
-  // Elementos según rol. La familia usa el menú del prototipo.
-  let items, bottomItems;
+  // Menú lateral completo (sin "Más": todas las opciones en el lateral).
+  let items;
   if (isMonitor()) {
     items = [
       { id: 'home', label: 'Inicio', icon: 'home' },
@@ -230,9 +233,13 @@ function renderNav() {
       { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Pasar lista', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'more', label: 'Más', icon: 'more' },
+      { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
+      { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
+      { id: 'evaluate', label: 'Evaluación diaria', icon: 'evaluate' },
+      { id: 'calendar', label: 'Calendario', icon: 'calendar' },
+      { id: 'users', label: 'Usuarios', icon: 'users' },
+      { id: 'profile', label: 'Mi perfil', icon: 'profile' },
     ];
-    bottomItems = items;
   } else {
     items = [
       { id: 'home', label: 'Inicio', icon: 'home' },
@@ -241,23 +248,20 @@ function renderNav() {
       { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'more', label: 'Más', icon: 'more' },
-    ];
-    bottomItems = [
-      { id: 'home', label: 'Inicio', icon: 'home' },
-      { id: 'child', label: 'Mi hijo', icon: 'child' },
-      { id: 'notices', label: 'Avisos', icon: 'notices' },
-      { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'more', label: 'Más', icon: 'more' },
+      { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
+      { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
+      { id: 'progress', label: 'Progreso', icon: 'progress' },
+      { id: 'calendar', label: 'Calendario', icon: 'calendar' },
+      { id: 'profile', label: 'Mi perfil', icon: 'profile' },
     ];
   }
-  // Barra inferior (móvil).
+  // Barra inferior (móvil): desplazable en horizontal con todas las opciones.
   const bottom = $('bottomnav');
-  bottom.innerHTML = bottomItems.map(i =>
+  bottom.innerHTML = items.map(i =>
     `<button class="bottom-btn" data-action="go" data-screen="${i.id}">
        <span class="ico">${NAV_ICONS[i.icon]}</span><span>${i.label}</span>
      </button>`).join('');
-  bottom.style.gridTemplateColumns = `repeat(${bottomItems.length},1fr)`;
+  bottom.style.gridTemplateColumns = 'none';
   // Barra lateral (escritorio).
   $('desktopNav').innerHTML = items.map(i =>
     `<button class="nav-btn" data-action="go" data-screen="${i.id}">
@@ -711,9 +715,9 @@ async function renderAttendance() {
       <input type="date" id="att-date" value="${today}">
       <div class="card" style="margin-top:12px"><div id="att-rows"></div>
         <div class="cal-legend" style="justify-content:flex-start;margin:12px 0">
-          <span><i class="cal-dot presente"></i>Presente</span>
-          <span><i class="cal-dot ausente"></i>Ausente</span>
-          <span><i class="cal-dot justificado"></i>Justificado</span>
+          <span><i class="cal-chip st-presente"></i>Presente</span>
+          <span><i class="cal-chip st-ausente"></i>Ausente</span>
+          <span><i class="cal-chip st-justificado"></i>Justificado</span>
         </div>
         <button class="btn block" data-action="save-attendance">Guardar lista de hoy</button>
       </div>
@@ -810,6 +814,12 @@ async function loadAttendanceHistory() {
     const a = d.data();
     if (a.date && a.date.slice(0, 7) === ym) byDate[a.date] = a.status;
   });
+  // Sesiones del mes (días con actividad).
+  const monthStart = `${ym}-01`;
+  const monthEnd = `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+  const ssnap = await getDocs(query(collection(db, 'sessions'),
+    where('date', '>=', monthStart), where('date', '<=', monthEnd)));
+  const sessionDays = new Set(ssnap.docs.map(d => d.data().date));
   const dates = Object.keys(byDate).sort();
   const nPres = dates.filter(d => byDate[d] === 'presente').length;
   const nAus = dates.filter(d => byDate[d] === 'ausente').length;
@@ -831,7 +841,9 @@ async function loadAttendanceHistory() {
     const ds = `${ym}-${String(d).padStart(2, '0')}`;
     const st = byDate[ds];
     const isToday = ds === today;
-    cells += `<span class="cal-day ${isToday ? 'today' : ''}">${d}${st ? `<i class="cal-dot ${st}"></i>` : ''}</span>`;
+    // Color por estado; si no hay registro pero hubo sesión, sombreado de actividad.
+    const shade = st ? `st-${st}` : (sessionDays.has(ds) ? 'session-day' : '');
+    cells += `<span class="cal-day ${isToday ? 'today' : ''} ${shade}">${d}</span>`;
   }
   const endFill = (7 - ((startDay + daysInMonth) % 7)) % 7;
   for (let d = 1; d <= endFill; d++) cells += `<span class="cal-day other">${d}</span>`;
@@ -851,9 +863,10 @@ async function loadAttendanceHistory() {
           ${cells}
         </div>
         <div class="cal-legend">
-          <span><i class="cal-dot presente"></i>Presente</span>
-          <span><i class="cal-dot ausente"></i>Ausente</span>
-          <span><i class="cal-dot justificado"></i>Justificado</span>
+          <span><i class="cal-chip st-presente"></i>Presente</span>
+          <span><i class="cal-chip st-ausente"></i>Ausente</span>
+          <span><i class="cal-chip st-justificado"></i>Justificado</span>
+          <span><i class="cal-chip session-day"></i>Con actividad</span>
         </div>
       </div>
       <div class="card" style="margin-top:16px">
@@ -1058,10 +1071,53 @@ async function renderProgress() {
 async function loadProgress() {
   const box = $('prog-body');
   const snap = await getDocs(query(collection(db, 'evaluations'),
-    where('studentId', '==', state.selectedChildId), orderBy('date', 'desc'), limit(30)));
+    where('studentId', '==', state.selectedChildId), orderBy('date', 'desc'), limit(60)));
   if (snap.empty) { box.innerHTML = emptyBox('📈', 'Aún no hay evaluaciones.'); return; }
-  const latest = snap.docs[0].data();
+  const evals = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.date.localeCompare(b.date));
+  const latest = evals[evals.length - 1];
   const latestScores = evalScores(latest);
+  // Aspectos (ítems de evaluación) en orden.
+  const aspects = [];
+  for (const e of evals) {
+    for (const s of evalScores(e)) {
+      if (!aspects.includes(s.label)) aspects.push(s.label);
+    }
+  }
+  const COLORS = ['#1f6b47', '#ee8a3b', '#2f6fab', '#c2493d', '#8b5cf6', '#d4a017', '#0097a7', '#e91e63'];
+  const colorOf = (label) => COLORS[aspects.indexOf(label) % COLORS.length];
+  // Datos para la gráfica: por día, puntuación por aspecto.
+  const chartData = evals.map(e => ({
+    date: e.date,
+    scores: Object.fromEntries(evalScores(e).map(s => [s.label, s.value])),
+    comment: e.comment || '',
+  }));
+  // Geometría del gráfico SVG.
+  const W = 640, H = 240, PL = 32, PR = 12, PT = 16, PB = 36;
+  const x = (i) => PL + (chartData.length <= 1 ? (W - PL - PR) / 2 : i * (W - PL - PR) / (chartData.length - 1));
+  const y = (v) => PT + (3 - v) * (H - PT - PB) / 3;
+  let svg = `<svg class="prog-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución de la evaluación">`;
+  // Rejilla horizontal (0-3).
+  for (let v = 0; v <= 3; v++) {
+    svg += `<line x1="${PL}" y1="${y(v)}" x2="${W - PR}" y2="${y(v)}" class="chart-grid"/><text x="${PL - 6}" y="${y(v) + 4}" class="chart-axis" text-anchor="end">${v}</text>`;
+  }
+  // Líneas por aspecto.
+  for (const asp of aspects) {
+    const pts = chartData.map((d, i) => [x(i), y(d.scores[asp] ?? null)]).filter(p => p[1] !== null);
+    if (pts.length < 1) continue;
+    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+    svg += `<path d="${path}" class="chart-line" stroke="${colorOf(asp)}" fill="none"/>`;
+  }
+  // Puntos clicables.
+  chartData.forEach((d, i) => {
+    for (const asp of aspects) {
+      const v = d.scores[asp];
+      if (v == null) continue;
+      svg += `<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="${colorOf(asp)}" class="chart-dot" data-action="prog-point" data-idx="${i}"/>`;
+    }
+    const [yy, mm, dd] = d.date.split('-');
+    svg += `<text x="${x(i)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${parseInt(dd, 10)}</text>`;
+  });
+  svg += '</svg>';
   box.innerHTML = `
     <h3>Última evaluación (${fmtDate(latest.date)})</h3>
     <div class="rating-summary">
@@ -1069,15 +1125,41 @@ async function loadProgress() {
         <div class="rating-box"><b>${s.value}/3</b><small>${esc(s.label)}</small></div>`).join('')}
     </div>
     ${latest.comment ? `<div class="card" style="margin-top:12px"><p>💬 ${esc(latest.comment)}</p></div>` : ''}
+    <hr class="divider">
+    <h3>Evolución del mes</h3>
+    <p class="muted" style="margin:0 0 8px">Pulsa un punto para ver la valoración de ese día.</p>
+    <div class="card chart-wrap">${svg}
+      <div class="chart-legend">
+        ${aspects.map(a => `<span><i style="background:${colorOf(a)}"></i>${esc(a)}</span>`).join('')}
+      </div>
+    </div>
+    <div id="prog-detail"></div>
     <hr class="divider"><h3>Historial</h3>
-    ${snap.docs.map(d => {
-      const e = d.data();
+    ${[...evals].reverse().map(e => {
       const sc = evalScores(e);
       const avg = avgScore(sc);
       return `<div class="card"><div class="row"><strong>${fmtDate(e.date)}</strong>
         <span class="meta">${avg ? `Media ${avg}` : '—'}</span></div></div>`;
     }).join('')}`;
+  // Guarda los datos para el detalle al pulsar un punto.
+  state.progChartData = chartData;
 }
+
+ACTIONS['prog-point'] = (d, el) => {
+  const idx = Number(el.dataset.idx);
+  const day = state.progChartData?.[idx];
+  if (!day) return;
+  const box = $('prog-detail');
+  box.innerHTML = `
+    <div class="card" style="margin-top:12px">
+      <div class="row"><strong>${fmtDate(day.date)}</strong></div>
+      <div class="rating-summary" style="margin-top:8px">
+        ${Object.entries(day.scores).map(([label, v]) => `
+          <div class="rating-box"><b>${v}/3</b><small>${esc(label)}</small></div>`).join('')}
+      </div>
+      ${day.comment ? `<p style="margin:12px 0 0">💬 ${esc(day.comment)}</p>` : ''}
+    </div>`;
+};
 
 /* ---------------- Ítems de evaluación (configuración del monitor) ---------------- */
 async function renderEvalItems() {
@@ -1186,17 +1268,17 @@ Object.assign(RENDER, {
 async function renderReports() {
   const c = $('reports-content');
   if (isMonitor()) {
-    // Estado del mes: cuenta diarios/mensuales creados este mes.
+    // Estado del mes: cuenta diarios/trimestrales creados este mes.
     const msnap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
     const ym = todayStr().slice(0, 7);
-    let nDiario = 0, nMensual = 0, nLeidos = 0;
+    let nDiario = 0, nTrimestral = 0, nLeidos = 0;
     const monthlyDone = new Set();
     msnap.docs.forEach(d => {
       const r = d.data();
       let rym = '';
       try { rym = r.createdAt.toDate().toISOString().slice(0, 7); } catch { /* sin fecha */ }
       if (rym === ym) {
-        if (reportType(r) === 'mensual') { nMensual++; monthlyDone.add(r.studentId); }
+        if (reportType(r) === 'trimestral') { nTrimestral++; monthlyDone.add(r.studentId); }
         else nDiario++;
         if ((r.readBy || []).length) nLeidos++;
       }
@@ -1220,7 +1302,7 @@ async function renderReports() {
             <label for="rp-type">Tipo de informe</label>
             <select id="rp-type">
               <option value="diario">Informe diario</option>
-              <option value="mensual">Informe mensual</option>
+              <option value="trimestral">Informe trimestral</option>
             </select>
             <label for="rp-month">Mes</label>
             <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
@@ -1229,7 +1311,7 @@ async function renderReports() {
             <label for="rp-body">Valoración para la familia</label>
             <textarea id="rp-body" placeholder="Cómo ha ido la sesión, qué reforzar…"></textarea>
             <div id="rp-attach-wrap">
-              <label for="rp-attach">Documento adjunto (Word o PDF, solo informe mensual)</label>
+              <label for="rp-attach">Documento adjunto (Word o PDF, solo informe trimestral)</label>
               <input type="file" id="rp-attach" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
               <p class="meta">Opcional. Máx. 10 MB.</p>
             </div>
@@ -1244,12 +1326,12 @@ async function renderReports() {
           <div class="card">
             <div class="section-head"><h3>Estado del mes</h3><span class="tag">${fmtMonth(ym).split(' de ')[0]}</span></div>
             <div class="history-line"><span>Informes diarios enviados</span><b>${nDiario}</b></div>
-            <div class="history-line"><span>Mensuales pendientes</span><b style="color:var(--accent)">${nPendientes}</b></div>
+            <div class="history-line"><span>Trimestrales pendientes</span><b style="color:var(--accent)">${nPendientes}</b></div>
             <div class="history-line"><span>Leídos por familias</span><b style="color:var(--brand)">${nLeidos}</b></div>
           </div>
           ${lastR ? `<div class="card" style="margin-top:16px">
             <h3>Último informe</h3>
-            <p class="muted">${esc(lastStudent ? `${lastStudent.firstName} ${lastStudent.lastName || ''}`.trim() : '')} · ${reportType(lastR) === 'mensual' ? 'Mensual' : 'Diario'} · ${tsToDate(lastR.createdAt)}</p>
+            <p class="muted">${esc(lastStudent ? `${lastStudent.firstName} ${lastStudent.lastName || ''}`.trim() : '')} · ${reportType(lastR) === 'trimestral' ? 'Trimestral' : 'Diario'} · ${tsToDate(lastR.createdAt)}</p>
             <button class="text-btn" data-action="open-report" data-id="${last.id}">Abrir vista previa →</button>
           </div>` : ''}
         </div>
@@ -1259,9 +1341,9 @@ async function renderReports() {
     $('reports-list').innerHTML = msnap.empty
       ? emptyBox('📄', 'Aún no hay informes.')
       : msnap.docs.map(d => reportCard(d.id, d.data())).join('');
-    // El adjunto solo se muestra para informes mensuales.
+    // El adjunto solo se muestra para informes trimestrales.
     const typeSel = $('rp-type'), attachWrap = $('rp-attach-wrap');
-    const toggleAttach = () => { attachWrap.style.display = typeSel.value === 'mensual' ? '' : 'none'; };
+    const toggleAttach = () => { attachWrap.style.display = typeSel.value === 'trimestral' ? '' : 'none'; };
     typeSel.addEventListener('change', toggleAttach);
     toggleAttach();
   } else {
@@ -1274,13 +1356,13 @@ async function renderReports() {
     c.innerHTML = `
       <div class="screen-head"><div>
         <h2>Informes de ${esc(child.firstName)}</h2>
-        <p class="muted">Consulta el seguimiento diario y los informes mensuales enviados por el profesor.</p>
+        <p class="muted">Consulta el seguimiento diario y los informes trimestrales enviados por el profesor.</p>
       </div></div>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
       <div class="filters">
         <button class="filter ${f === 'all' ? 'active' : ''}" data-action="report-filter" data-f="all">Todos</button>
         <button class="filter ${f === 'diario' ? 'active' : ''}" data-action="report-filter" data-f="diario">Diarios</button>
-        <button class="filter ${f === 'mensual' ? 'active' : ''}" data-action="report-filter" data-f="mensual">Mensuales</button>
+        <button class="filter ${f === 'trimestral' ? 'active' : ''}" data-action="report-filter" data-f="trimestral">Trimestrales</button>
       </div>
       <div id="reports-list" style="margin-top:12px"></div>`;
     const sel = $('rep-child');
@@ -1293,7 +1375,7 @@ ACTIONS['report-filter'] = (d) => { state.reportFilter = d.f; renderReports(); }
 const reportCard = (id, r) => `
   <div class="card" data-action="open-report" data-id="${id}" style="cursor:pointer">
     <h3>${esc(r.title)}</h3>
-    <div class="meta">${r.type ? `<span class="tag">${r.type === 'mensual' ? 'Mensual' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
+    <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
   </div>`;
 
 async function loadReports() {
@@ -1340,7 +1422,7 @@ const reportCardExpand = (id, r) => {
     <div class="report-head" data-action="toggle-report" data-id="${id}">
       ${reportDateBlock(r)}
       <div class="report-main">
-        <span class="tag ${tipo === 'mensual' ? 'tag-info' : 'tag-diario'}">${tipo === 'mensual' ? 'Mensual' : 'Diario'}</span>
+        <span class="tag ${tipo === 'trimestral' ? 'tag-info' : 'tag-diario'}">${tipo === 'trimestral' ? 'Trimestral' : 'Diario'}</span>
         <h4>${esc(r.title)}</h4>
       </div>
       <button class="expand-btn" aria-label="${open ? 'Contraer' : 'Expandir'}">${open ? '–' : '+'}</button>
@@ -1373,7 +1455,7 @@ function showReportDetail(r) {
     <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
-    <div class="meta">${r.type ? `<span class="tag">${r.type === 'mensual' ? 'Mensual' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
+    <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
     <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p>
       ${reportAttachmentHTML(r)}</div>`;
   show('reportDetail');
@@ -1402,10 +1484,10 @@ ACTIONS['publish-report2'] = async () => {
   if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
   if (!title || !body) { toast('Escribe un título y el texto del informe.'); return; }
   const type = $('rp-type').value;
-  // Sube el adjunto si lo hay (solo mensual).
+  // Sube el adjunto si lo hay (solo trimestral).
   let attachmentUrl = null, attachmentName = null;
   const fileInput = $('rp-attach');
-  if (type === 'mensual' && fileInput && fileInput.files.length) {
+  if (type === 'trimestral' && fileInput && fileInput.files.length) {
     const file = fileInput.files[0];
     if (file.size > 10 * 1024 * 1024) { toast('El archivo supera los 10 MB.'); return; }
     try {
@@ -1946,8 +2028,8 @@ async function renderCalendar() {
           ${cells.map(cell => {
             const has = datesWithSession.has(cell.date);
             const isToday = cell.date === today;
-            return `<button class="cal-day ${cell.other ? 'other' : ''} ${isToday ? 'today' : ''} ${has ? 'has-session' : ''}" data-action="cal-day" data-date="${cell.date}">
-              <span>${cell.label}</span>${has ? '<span class="cal-dot"></span>' : ''}
+            return `<button class="cal-day ${cell.other ? 'other' : ''} ${isToday ? 'today' : ''} ${has ? 'session-day' : ''}" data-action="cal-day" data-date="${cell.date}">
+              <span>${cell.label}</span>
             </button>`;
           }).join('')}
         </div>
@@ -2061,12 +2143,12 @@ const COVERAGE_CATS = [
   { key: 'incidencias', label: 'Incidencias' },
   { key: 'chat', label: 'Chat' },
   { key: 'informe_diario', label: 'Informe diario' },
-  { key: 'informe_mensual', label: 'Informe mensual' },
+  { key: 'informe_trimestral', label: 'Informe trimestral' },
   { key: 'avisos', label: 'Avisos' },
   { key: 'respuestas', label: 'Respuestas' },
 ];
 const notifTypeLabel = (n) => {
-  if (n.type === 'report') return n.reportType === 'mensual' ? 'Informe mensual' : 'Informe diario';
+  if (n.type === 'report') return (n.reportType === 'trimestral' || n.reportType === 'mensual') ? 'Informe trimestral' : 'Informe diario';
   return NOTIF_TYPE_LABEL[n.type] || 'Aviso';
 };
 
@@ -2093,11 +2175,8 @@ async function renderNotifications() {
   const snap = await getDocs(query(collection(db, 'users', state.user.uid, 'notifications'),
     orderBy('createdAt', 'desc'), limit(50)));
   const cov = (state.profile && state.profile.alertCoverage) || {};
-  c.innerHTML = pushCard + `
-    <div class="screen-head"><h2>Notificaciones</h2>
-      ${snap.size ? `<button class="btn small secondary" data-action="read-all-notif">Marcar leídas</button>` : ''}
-    </div><div id="notif-list"></div>
-    <div class="card" style="margin-top:16px">
+  const coverageCard = `
+    <div class="card" style="margin-bottom:12px">
       <h3>Cobertura de alertas</h3>
       <p class="muted" style="margin:4px 0 12px">Elige qué avisos quieres recibir.</p>
       <div class="coverage-pills">
@@ -2105,6 +2184,10 @@ async function renderNotifications() {
           <button class="pill ${cov[cat.key] !== false ? 'on' : ''}" data-action="toggle-coverage" data-key="${cat.key}">${cat.label}</button>`).join('')}
       </div>
     </div>`;
+  c.innerHTML = pushCard + coverageCard + `
+    <div class="screen-head"><h2>Notificaciones</h2>
+      ${snap.size ? `<button class="btn small secondary" data-action="read-all-notif">Marcar leídas</button>` : ''}
+    </div><div id="notif-list"></div>`;
   $('notif-list').innerHTML = snap.empty
     ? emptyBox('🔔', 'No tienes notificaciones.')
     : snap.docs.map(d => {
@@ -2214,34 +2297,6 @@ ACTIONS['sign-out'] = async () => { await signOut(auth); };
 ACTIONS['profile-info'] = () => {
   alert(`Nombre: ${state.profile.displayName || '—'}\nCorreo: ${state.profile.email || '—'}\nRol: ${ROLE_LABEL[state.role] || state.role}`);
 };
-
-function renderMore() {
-  const fam = !isMonitor();
-  const items = [
-    ...(fam ? [{ id: 'child', label: 'Datos de mi hijo', icon: 'child' }] : []),
-    { id: 'reports', label: 'Informes', icon: 'reports' },
-    { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
-    { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
-    ...(fam
-      ? [{ id: 'progress', label: 'Evaluación diaria', icon: 'evaluate' }]
-      : [{ id: 'evaluate', label: 'Evaluación diaria', icon: 'evaluate' }]),
-    { id: 'calendar', label: 'Calendario de sesiones', icon: 'calendar' },
-    ...(!fam ? [{ id: 'users', label: 'Usuarios', icon: 'users' }] : []),
-    { id: 'profile', label: 'Perfil y ajustes', icon: 'profile' },
-  ];
-  $('more-content').innerHTML = `
-    <div class="screen-head"><h2>Más</h2></div>
-    <div class="card menu-list">` + items.map(i =>
-      `<button class="menu-row big" data-action="go" data-screen="${i.id}">
-        <span class="menu-ico">${NAV_ICONS[i.icon]}</span>
-        <span class="menu-label">${i.label}</span><b>›</b>
-      </button>`).join('') + `</div>
-    <div class="card" style="margin-top:16px">
-      <span class="tag tag-info">Studio sistema</span>
-      <h3 style="margin:10px 0 6px">Studio sistema</h3>
-      <p class="muted" style="margin:0">Asociación Juvenil Glera · Curso 2026–2027</p>
-    </div>`;
-}
 
 /* ---------------- Push: registro del token y mensajes en 1er plano ---------------- */
 // Globo con el número de notificaciones sin leer en el icono de la app.
@@ -2562,7 +2617,6 @@ Object.assign(RENDER, {
   calendar: renderCalendar,
   notifications: renderNotifications,
   profile: renderProfile,
-  more: renderMore,
   users: renderUsers,
   child: renderChild,
   notices: renderNotices,
