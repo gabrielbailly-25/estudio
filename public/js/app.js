@@ -233,12 +233,10 @@ function renderNav() {
       { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Pasar lista', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
       { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
       { id: 'evaluate', label: 'Evaluación diaria', icon: 'evaluate' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar' },
       { id: 'users', label: 'Usuarios', icon: 'users' },
-      { id: 'profile', label: 'Mi perfil', icon: 'profile' },
     ];
   } else {
     items = [
@@ -248,11 +246,9 @@ function renderNav() {
       { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'notifications', label: 'Notificaciones', icon: 'notifications' },
       { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
       { id: 'progress', label: 'Progreso', icon: 'progress' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar' },
-      { id: 'profile', label: 'Mi perfil', icon: 'profile' },
     ];
   }
   // Barra inferior (móvil): desplazable en horizontal con todas las opciones.
