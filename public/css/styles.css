@@ -469,6 +469,14 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 .entity-radios { margin: 12px 0 16px; display: flex; flex-direction: column; gap: 8px; }
 .radio-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-weight: 600; }
 .radio-row input { accent-color: var(--brand); width: 18px; height: 18px; }
+/* Editor de texto enriquecido. */
+.rich-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.rich-btn { border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 700; cursor: pointer; }
+.rich-btn:active { background: var(--brand-soft); }
+.rich-editor { min-height: 110px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px 12px; background: var(--surface); font-size: 15px; line-height: 1.5; outline: none; }
+.rich-editor:focus { border-color: var(--brand); }
+.rich-editor ul, .rich-editor ol { margin: 6px 0 6px 20px; }
+.report-body ul, .report-body ol, .notice-card ul, .notice-card ol { margin: 6px 0 6px 20px; }
 .attach-link {
   display: inline-flex; align-items: center; gap: 6px;
   margin: 8px 0; padding: 8px 12px; border-radius: 10px;
