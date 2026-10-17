@@ -345,6 +345,8 @@ function watchAuth() {
       show('home');
       subscribeNotifications();
       initPush();
+      // Primera vez: elegir entidad si aún no tiene una asignada.
+      await maybeShowEntityPicker();
     } catch (err) {
       console.error(err);
       toast('Error al cargar tus datos.');
@@ -496,9 +498,29 @@ async function renderHome() {
   const fam = !isMonitor();
   const nombre = (state.profile.displayName || '').split(' ')[0] || (fam ? 'familia' : 'monitor');
   const child = fam ? (state.children.find(x => x.id === state.selectedChildId) || state.children[0]) : null;
+  // Entidades para el selector de Inicio (monitor/admin).
+  let entities = [];
+  if (!fam) {
+    try {
+      const esnap = await getDocs(query(collection(db, 'entities'), orderBy('name')));
+      entities = esnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (err) { console.error(err); }
+  }
+  const homeEntity = state.homeEntityFilter || '';
+  // Alumnos visibles según la entidad seleccionada.
+  const students = homeEntity ? state.students.filter(s => (s.entityId || '') === homeEntity) : state.students;
+  const studentIds = new Set(students.map(s => s.id));
+  const entitySelector = !fam && entities.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <label for="home-entity-filter">Entidad</label>
+      <select id="home-entity-filter">
+        <option value="">Todas las entidades</option>
+        ${entities.map(e => `<option value="${e.id}" ${homeEntity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+      </select>
+    </div>` : '';
   const subtitulo = fam
     ? (child ? `Este es el resumen de ${esc(child.firstName)} para hoy.` : 'Bienvenido/a a Studio sistema.')
-    : `${state.students.length} alumno(s) en la actividad.`;
+    : `${students.length} alumno(s) en la actividad.`;
 
   // Último aviso del tablón (fijados primero, como en la lista).
   let latest = null;
@@ -567,7 +589,7 @@ async function renderHome() {
       metrics = `
       <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="attendance">
         <div class="metric-top"><span class="metric-ico">${NAV_ICONS.attendance}</span><small>Hoy</small></div>
-        <div><b>${attsnap.size}</b><br><span>asistencias de hoy</span></div>
+        <div><b>${attsnap.docs.filter(d => studentIds.has(d.data().studentId)).length}</b><br><span>asistencias de hoy</span></div>
       </div>
       <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="auths">
         <div class="metric-top"><span class="metric-ico orange">${NAV_ICONS.auths}</span><small>Abiertas</small></div>
@@ -575,7 +597,7 @@ async function renderHome() {
       </div>
       <div class="card metric col-4 metrics-mobile clickable" data-action="go" data-screen="evaluate">
         <div class="metric-top"><span class="metric-ico blue">${NAV_ICONS.evaluate}</span><small>Hoy</small></div>
-        <div><b>${evsnap.size}/${state.students.length}</b><br><span>evaluaciones hechas</span></div>
+        <div><b>${evsnap.docs.filter(d => studentIds.has(d.data().studentId)).length}/${students.length}</b><br><span>evaluaciones hechas</span></div>
       </div>`;
     } catch (err) { console.error('Inicio: no se pudieron cargar las métricas.', err); }
   }
@@ -609,6 +631,7 @@ async function renderHome() {
       <div><h2>${saludoHora()}, ${esc(nombre)}</h2><p>${subtitulo}</p></div>
       <span class="date-chip">${fechaLargaHoy()}</span>
     </div>
+    ${entitySelector}
     <div class="grid">
       <div class="col-8">
         ${latest ? `
@@ -634,6 +657,11 @@ async function renderHome() {
         <button class="text-btn" data-action="go" data-screen="notices">Ver tablón →</button>
       </div></div>
     </div>`;
+  const homeSel = $('home-entity-filter');
+  if (homeSel) homeSel.addEventListener('change', () => {
+    state.homeEntityFilter = homeSel.value;
+    renderHome();
+  });
   } catch (err) {
     console.error('Error crítico en Inicio:', err);
     c.innerHTML = `
@@ -1689,7 +1717,7 @@ ACTIONS['wipe-all-data'] = async () => {
   }
   // Colecciones principales.
   for (const col of ['students', 'conversations', 'messages', 'notices', 'reports',
-                     'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems']) {
+                     'evaluations', 'attendance', 'authorizations', 'sessions', 'evalItems', 'entities']) {
     for (const d of await safeGet(col, collection(db, col))) await safeDel(col, d.ref);
   }
   // Usuarios: borra todos excepto el admin actual (con sus subcolecciones).
@@ -2429,23 +2457,63 @@ async function renderUsers() {
   if (!isMonitor()) { show('home'); return; }
   const admin = isAdmin();
   const c = $('users-content');
-  const [usnap, ssnap] = await Promise.all([
+  const [usnap, ssnap, esnap] = await Promise.all([
     getDocs(query(collection(db, 'users'), orderBy('displayName'))),
     getDocs(query(collection(db, 'students'), orderBy('firstName'))),
+    getDocs(query(collection(db, 'entities'), orderBy('name'))),
   ]);
-  const users = usnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const students = ssnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const allUsers = usnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const allStudents = ssnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const entities = esnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // Filtro por entidad (persiste en la sesión).
+  const filterEntity = state.usersEntityFilter || '';
+  const users = filterEntity ? allUsers.filter(u => (u.entityId || '') === filterEntity) : allUsers;
+  const students = filterEntity ? allStudents.filter(s => (s.entityId || '') === filterEntity) : allStudents;
   const familias = users.filter(u => u.role === 'familia');
   const profesores = users.filter(u => u.role === 'monitor');
-  const es = state.editingStudentId ? students.find(s => s.id === state.editingStudentId) : null;
+  const es = state.editingStudentId ? allStudents.find(s => s.id === state.editingStudentId) : null;
   if (state.editingStudentId && !es) state.editingStudentId = null; // el alumno en edición ya no existe
   const esFam = es ? (es.familyUids || []) : [];
   // Profesor por defecto al crear: el propio monitor (si lo es).
   const defaultTeacherUid = !es && !admin ? state.user.uid : '';
+  // Entidad por defecto al crear un alumno: la del filtro o la del usuario.
+  const defaultEntityId = filterEntity || (state.profile && state.profile.entityId) || '';
   c.innerHTML = `
+    <div class="screen-head"><h2>Usuarios</h2></div>
+    <div class="card" style="margin-bottom:16px">
+      <label for="users-entity-filter">Filtrar por entidad</label>
+      <select id="users-entity-filter">
+        <option value="">Todas las entidades</option>
+        ${entities.map(e => `<option value="${e.id}" ${filterEntity === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+      </select>
+    </div>
+    ${admin ? `
+    <div class="section-head"><div><h3>Entidades</h3>
+      <p>Crea y edita las entidades educativas.</p></div>
+      <span class="badge info">${entities.length}</span></div>
+    <div class="item-list">
+      ${entities.length ? entities.map(e => `
+        <div class="list-item">
+          <span class="item-icon">🏫</span>
+          <div class="item-main">
+            <h4>${esc(e.name)}</h4>
+          </div>
+          <div class="item-side">
+            <button class="text-btn" data-action="edit-entity" data-id="${e.id}">Editar</button>
+            <button class="danger-btn" data-action="delete-entity" data-id="${e.id}">Eliminar</button>
+          </div>
+        </div>`).join('')
+      : emptyBox('🏫', 'Aún no hay entidades. Crea la primera abajo.')}
+    </div>
+    <div class="card" style="margin:12px 0 24px">
+      <label for="en-name">${state.editingEntityId ? 'Editar entidad' : 'Nueva entidad'}</label>
+      <input type="text" id="en-name" maxlength="80" placeholder="Ej.: Colegio Alcaste" autocomplete="off" value="${esc(state.editingEntityId ? (entities.find(e => e.id === state.editingEntityId) || {}).name || '' : '')}">
+      <button class="btn block" data-action="save-entity">${state.editingEntityId ? 'Guardar cambios' : 'Crear entidad'}</button>
+      ${state.editingEntityId ? `<button class="btn secondary block" data-action="cancel-edit-entity" style="margin-top:8px">Cancelar</button>` : ''}
+    </div>` : ''}
     ${admin ? `
     <div class="section-head"><div><h3>Usuarios</h3>
-      <p>Cambia el rol de cada usuario.</p></div>
+      <p>Cambia el rol y la entidad de cada usuario.</p></div>
       <span class="badge info">${users.length}</span></div>
     <div class="item-list">
       ${users.length ? users.map(u => `
@@ -2455,10 +2523,15 @@ async function renderUsers() {
             <h4>${esc(u.displayName || 'Sin nombre')}</h4>
             <p>${esc(u.email || '')}</p>
           </div>
-          <div class="item-side">
+          <div class="item-side" style="flex-direction:column;gap:6px;align-items:flex-end">
             <select data-role-select="${u.id}" aria-label="Rol de ${esc(u.displayName || u.email || 'usuario')}">
-              ${['admin', 'monitor', 'familia'].map(r =>
+              ${['admin', 'monitor', 'familia'].map(r => `
                 `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+            </select>
+            <select data-entity-select="${u.id}" aria-label="Entidad de ${esc(u.displayName || u.email || 'usuario')}">
+              <option value="">Sin entidad</option>
+              ${entities.map(e => `
+                `<option value="${e.id}" ${(u.entityId || '') === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
             </select>
           </div>
         </div>`).join('')
@@ -2489,6 +2562,12 @@ async function renderUsers() {
       <input type="text" id="ns-last" maxlength="80" autocomplete="off" value="${esc(es?.lastName || '')}">
       <label for="ns-group">Grupo</label>
       <input type="text" id="ns-group" maxlength="40" placeholder="Ej.: Grupo A" autocomplete="off" value="${esc(es?.group || '')}">
+      <label for="ns-entity">Entidad</label>
+      <select id="ns-entity">
+        <option value="">— Sin entidad —</option>
+        ${entities.map(en => `
+          <option value="${en.id}" ${(es?.entityId || defaultEntityId) === en.id ? 'selected' : ''}>${esc(en.name)}</option>`).join('')}
+      </select>
       <label for="ns-teacher">Profesor responsable</label>
       <select id="ns-teacher">
         <option value="">— Sin asignar —</option>
@@ -2511,6 +2590,25 @@ async function renderUsers() {
       <button class="btn block" data-action="create-student">${es ? 'Guardar cambios' : 'Guardar alumno'}</button>
       ${es ? `<button class="btn secondary block" data-action="cancel-edit-student" style="margin-top:8px">Cancelar</button>` : ''}
     </div>`;
+  // Filtro por entidad.
+  const entityFilterSel = $('users-entity-filter');
+  if (entityFilterSel) entityFilterSel.addEventListener('change', () => {
+    state.usersEntityFilter = entityFilterSel.value;
+    renderUsers();
+  });
+  // Cambio de entidad por usuario.
+  c.querySelectorAll('[data-entity-select]').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      try {
+        await updateDoc(doc(db, 'users', sel.dataset.entitySelect), { entityId: sel.value || null });
+        if (sel.dataset.entitySelect === state.user.uid) state.profile.entityId = sel.value || null;
+        toast('Entidad actualizada.');
+      } catch (err) {
+        console.error(err);
+        toast('No se pudo cambiar la entidad.');
+      }
+    });
+  });
   c.querySelectorAll('[data-role-select]').forEach(sel => {
     sel.addEventListener('change', async () => {
       try {
@@ -2560,6 +2658,86 @@ ACTIONS['cancel-edit-student'] = () => {
   state.editingStudentId = null;
   renderUsers();
 };
+/* ---------------- Entidades educativas ---------------- */
+ACTIONS['save-entity'] = async () => {
+  const name = $('en-name').value.trim();
+  if (!name) { toast('Escribe el nombre de la entidad.'); return; }
+  try {
+    if (state.editingEntityId) {
+      await updateDoc(doc(db, 'entities', state.editingEntityId), { name });
+      state.editingEntityId = null;
+      toast('Entidad actualizada.');
+    } else {
+      await addDoc(collection(db, 'entities'), { name, createdAt: serverTimestamp() });
+      toast('Entidad creada.');
+    }
+    renderUsers();
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo guardar la entidad.');
+  }
+};
+ACTIONS['edit-entity'] = (d) => {
+  state.editingEntityId = d.id;
+  renderUsers();
+};
+ACTIONS['cancel-edit-entity'] = () => {
+  state.editingEntityId = null;
+  renderUsers();
+};
+/* ---------------- Selector de entidad al primer acceso ---------------- */
+// Si el usuario aún no tiene entidad y hay entidades creadas, le pide elegir una.
+async function maybeShowEntityPicker() {
+  if (state.profile && state.profile.entityId) return;
+  if (state.entityPickerShown) return;
+  let entities = [];
+  try {
+    const snap = await getDocs(query(collection(db, 'entities'), orderBy('name')));
+    entities = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (err) { console.error(err); return; }
+  if (!entities.length) return; // aún no hay entidades: el admin las crea primero
+  state.entityPickerShown = true;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="card modal-card">
+      <h3>¿En qué entidad se desarrolla la actividad de estudio?</h3>
+      <p class="muted">Selecciona la entidad para ver solo sus datos.</p>
+      <div class="entity-radios">
+        ${entities.map((e, i) => `
+          <label class="radio-row"><input type="radio" name="entity-pick" value="${e.id}" ${i === 0 ? 'checked' : ''}>
+            ${esc(e.name)}</label>`).join('')}
+      </div>
+      <button class="btn block" id="entity-pick-confirm">Continuar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#entity-pick-confirm').addEventListener('click', async () => {
+    const sel = overlay.querySelector('input[name="entity-pick"]:checked');
+    if (!sel) { toast('Selecciona una entidad.'); return; }
+    try {
+      await updateDoc(doc(db, 'users', state.user.uid), { entityId: sel.value });
+      state.profile.entityId = sel.value;
+      overlay.remove();
+      toast('Entidad seleccionada.');
+      if (state.current === 'home') renderHome();
+    } catch (err) {
+      console.error(err);
+      toast('No se pudo guardar la entidad.');
+    }
+  });
+}
+  if (!confirm('¿Eliminar esta entidad? Los usuarios y alumnos asociados quedarán sin entidad.')) return;
+  try {
+    await deleteDoc(doc(db, 'entities', d.id));
+    if (state.editingEntityId === d.id) state.editingEntityId = null;
+    toast('Entidad eliminada.');
+    renderUsers();
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo eliminar la entidad.');
+  }
+};
+
 ACTIONS['create-student'] = async () => {
   const firstName = $('ns-first').value.trim();
   if (!firstName) { toast('Escribe al menos el nombre del alumno.'); return; }
@@ -2579,6 +2757,7 @@ ACTIONS['create-student'] = async () => {
     lastName: $('ns-last').value.trim(),
     group: $('ns-group').value.trim(),
     familyUids,
+    entityId: $('ns-entity').value || null,
     ...(teacherUid ? { teacherUid } : (editing ? { teacherUid: deleteField() } : {})),
     ...(teacherName && teacherUid ? { monitorName: teacherName } : (editing ? { monitorName: deleteField() } : {})),
     ...opt('ns-schedule', 'schedule'),
