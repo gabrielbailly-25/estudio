@@ -32,6 +32,7 @@ const state = {
   reportFilter: 'all', // filtro de informes en vista familia: all | diario | trimestral
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   editingNoticeId: null, // aviso en edición (null = crear nuevo)
+  editingAuthId: null, // autorización en edición (null = crear nueva)
   editingStudentId: null, // alumno en edición en la pantalla Usuarios (null = crear nuevo)
   unsubChat: null,
   unsubNotif: null,
@@ -1979,7 +1980,7 @@ async function renderAuths() {
   }
   c.innerHTML = `
     <div class="screen-head"><h2>Autorizaciones</h2>
-      ${isMonitor() ? `<button class="btn small" data-action="go" data-screen="authCompose">+ Crear solicitud</button>` : ''}
+      ${isMonitor() ? `<button class="btn small" data-action="new-auth">+ Crear solicitud</button>` : ''}
     </div>
     ${isMonitor() ? `<div class="section-head"><div>
       <h3>Solicitudes a las familias</h3>
@@ -2016,6 +2017,10 @@ async function renderAuths() {
         </div>
         <div class="progress"><div class="progress-bar" style="width:${pct}%"></div></div>
         <button class="text-btn" style="margin-top:8px">Ver respuestas</button>
+        <div class="row" style="justify-content:flex-start;margin-top:6px">
+          <button class="text-btn" data-action="edit-auth" data-id="${d.id}">✏️ Editar</button>
+          <button class="text-btn" data-action="delete-auth" data-id="${d.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+        </div>
       </div>`);
     }
   }
@@ -2039,8 +2044,12 @@ ACTIONS['open-auth'] = async (d) => {
   $('auth-detail-content').innerHTML = `
     <button class="back" data-action="go" data-screen="auths">‹ Autorizaciones</button>
     <h2>${esc(a.title)}</h2>
-    <div class="card"><p style="white-space:pre-wrap">${esc(a.description)}</p>
+    <div class="card"><p style="white-space:pre-wrap">${richHTML(a.description)}</p>
       ${a.dueDate ? `<div class="meta">Límite: ${fmtDate(a.dueDate)}</div>` : ''}</div>
+    ${!isFamilia() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
+      <button class="text-btn" data-action="edit-auth" data-id="${d.id}">✏️ Editar</button>
+      <button class="text-btn" data-action="delete-auth" data-id="${d.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+    </div>` : ''}
     ${action}`;
   show('authDetail');
 };
@@ -2054,27 +2063,64 @@ ACTIONS['sign-auth'] = async (d) => {
 };
 
 async function renderAuthCompose() {
+  const editing = state.editingAuthId ? (await getDoc(doc(db, 'authorizations', state.editingAuthId))).data() : null;
   $('auth-compose-content').innerHTML = `
     <button class="back" data-action="go" data-screen="auths">‹ Autorizaciones</button>
-    <h2>Nueva autorización</h2>
+    <h2>${editing ? 'Editar autorización' : 'Nueva autorización'}</h2>
     <label for="ac-title">Título</label>
-    <input type="text" id="ac-title" maxlength="120" placeholder="Ej.: Salir solo al terminar">
-    <label for="ac-desc">Descripción</label>
-    <textarea id="ac-desc" placeholder="Explica qué autoriza la familia…"></textarea>
+    <input type="text" id="ac-title" maxlength="120" placeholder="Ej.: Salir solo al terminar" value="${esc(editing?.title || '')}">
+    <label>Descripción</label>
+    ${richEditorHTML('ac-desc', editing?.description || '')}
     <label for="ac-due">Fecha límite (opcional)</label>
-    <input type="date" id="ac-due">
-    <button class="btn block" data-action="publish-auth">Solicitar firmas</button>`;
+    <input type="date" id="ac-due" value="${esc(editing?.dueDate || '')}">
+    <button class="btn block" data-action="publish-auth">${editing ? 'Guardar cambios' : 'Solicitar firmas'}</button>`;
+  bindRichEditor($('auth-compose-content'));
 }
+ACTIONS['new-auth'] = () => {
+  state.editingAuthId = null;
+  show('authCompose');
+};
+ACTIONS['edit-auth'] = (d) => {
+  state.editingAuthId = d.id;
+  show('authCompose');
+};
+ACTIONS['delete-auth'] = async (d) => {
+  if (!confirm('¿Eliminar esta autorización? Se borrarán también las firmas recogidas.')) return;
+  try {
+    const ss = await getDocs(collection(db, 'authorizations', d.id, 'signatures'));
+    for (const s of ss.docs) await deleteDoc(s.ref);
+    await deleteDoc(doc(db, 'authorizations', d.id));
+    toast('Autorización eliminada.');
+    const active = document.querySelector('.screen.active');
+    show(active ? active.id.replace('screen-', '') : 'auths');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo eliminar la autorización.');
+  }
+};
 ACTIONS['publish-auth'] = async () => {
   const title = $('ac-title').value.trim();
-  const description = $('ac-desc').value.trim();
-  if (!title || !description) { toast('Escribe un título y una descripción.'); return; }
-  await addDoc(collection(db, 'authorizations'), {
-    title, description, dueDate: $('ac-due').value || null,
-    createdByUid: state.user.uid, createdAt: serverTimestamp(),
-  });
-  toast('Autorización publicada.');
-  show('auths');
+  const description = richEditorValue('ac-desc');
+  if (!title || !richEditorText('ac-desc')) { toast('Escribe un título y una descripción.'); return; }
+  try {
+    if (state.editingAuthId) {
+      await updateDoc(doc(db, 'authorizations', state.editingAuthId), {
+        title, description, dueDate: $('ac-due').value || null,
+      });
+      state.editingAuthId = null;
+      toast('Autorización actualizada.');
+    } else {
+      await addDoc(collection(db, 'authorizations'), {
+        title, description, dueDate: $('ac-due').value || null,
+        createdByUid: state.user.uid, createdAt: serverTimestamp(),
+      });
+      toast('Autorización publicada.');
+    }
+    show('auths');
+  } catch (err) {
+    console.error(err);
+    toast('No se pudo guardar la autorización.');
+  }
 };
 
 /* ---------------- Calendario de sesiones ---------------- */
