@@ -463,6 +463,12 @@ label.check { display: flex; align-items: center; gap: 10px; font-weight: 600; m
 .chart-dot { cursor: pointer; stroke: #fff; stroke-width: 1.5; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 13px; }
 .chart-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+/* Modal de selección de entidad. */
+.modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.5); display: grid; place-items: center; padding: 16px; }
+.modal-card { width: 100%; max-width: 420px; }
+.entity-radios { margin: 12px 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.radio-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; font-weight: 600; }
+.radio-row input { accent-color: var(--brand); width: 18px; height: 18px; }
 .attach-link {
   display: inline-flex; align-items: center; gap: 6px;
   margin: 8px 0; padding: 8px 12px; border-radius: 10px;
