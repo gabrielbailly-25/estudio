@@ -2039,7 +2039,15 @@ ACTIONS['open-auth'] = async (d) => {
       : `<button class="btn block" data-action="sign-auth" data-id="${d.id}">Firmar autorización</button>`;
   } else {
     const ss = await getDocs(collection(db, 'authorizations', d.id, 'signatures'));
-    action = `<p class="meta">✍️ ${ss.size} familias han firmado.</p>`;
+    const signers = ss.docs.map(s => s.data()).sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
+    action = `<p class="meta">✍️ ${ss.size} ${ss.size === 1 ? 'familia ha' : 'familias han'} firmado.</p>
+      ${signers.length ? `<div class="card" style="margin-top:12px">
+        <h3>Familias que han firmado</h3>
+        ${signers.map(s => `<div class="history-line">
+          <div><strong>${esc(s.displayName || 'Sin nombre')}</strong></div>
+          <span class="meta">${s.signedAt ? tsToDate(s.signedAt) : ''}</span>
+        </div>`).join('')}
+      </div>` : ''}`;
   }
   $('auth-detail-content').innerHTML = `
     <button class="back" data-action="go" data-screen="auths">‹ Autorizaciones</button>
