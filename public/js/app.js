@@ -2542,12 +2542,12 @@ async function renderUsers() {
           <div class="item-side" style="flex-direction:column;gap:6px;align-items:flex-end">
             <select data-role-select="${u.id}" aria-label="Rol de ${esc(u.displayName || u.email || 'usuario')}">
               ${['admin', 'monitor', 'familia'].map(r => `
-                `<option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+                <option value="${r}" ${u.role === r ? 'selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
             </select>
             <select data-entity-select="${u.id}" aria-label="Entidad de ${esc(u.displayName || u.email || 'usuario')}">
               <option value="">Sin entidad</option>
               ${entities.map(e => `
-                `<option value="${e.id}" ${(u.entityId || '') === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
+                <option value="${e.id}" ${(u.entityId || '') === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}
             </select>
           </div>
         </div>`).join('')
