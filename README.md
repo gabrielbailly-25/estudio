@@ -1,10 +1,10 @@
 # App Studio sistema — Estudio Dirigido
 
-App web móvil (PWA) en español para la actividad de **Estudio Dirigido**: comunicación entre **familias y profesores** con tablón de avisos, asistencia diaria, evaluación diaria, informes diarios y trimestrales, chat, autorizaciones, calendario y notificaciones push. La app la usan diversas entidades educativas; cada usuario y alumno pertenece a una entidad.
+App web móvil (PWA) en español para la actividad de **Estudio Dirigido**: comunicación entre **familias y profesores** con tablón de avisos con texto enriquecido (negrita, cursiva, listas, enlaces), asistencia diaria con calendario mensual de días sombreados, evaluación diaria con gráfica de progreso, informes diarios y trimestrales, chat, autorizaciones con firma y listado de firmantes, calendario de sesiones y notificaciones push. La app la usan diversas entidades educativas; cada usuario y alumno pertenece a una entidad.
 
 **Stack:** HTML/CSS/JS plano, sin paso de compilación (ideal para GitHub + Vercel). Firebase: Authentication (login con Google), Firestore, Cloud Messaging (push) y Storage.
 
-**Pantallas:** las familias ven Inicio (dashboard), Mi hijo, Informes, Avisos, Asistencia y Chat; los profesores ven Inicio, Informes, Avisos, Pasar lista, Chat, Autorizaciones, Evaluación diaria, Calendario y Usuarios (solo admin). Notificaciones y Mi perfil están arriba a la derecha (campana y avatar). Los avisos del tablón se pueden editar y eliminar (profesores); las familias pueden iniciar un chat con el profesor desde "Mi hijo" → "Escribir al profesor".
+**Pantallas:** las familias ven Inicio (dashboard), Mi hijo, Informes, Avisos, Asistencia y Chat; los profesores ven Inicio, Informes, Avisos, Pasar lista, Chat, Autorizaciones, Evaluación diaria, Calendario y Usuarios (solo admin). Notificaciones y Mi perfil están arriba a la derecha (campana y avatar). Los avisos del tablón se pueden editar y eliminar (profesores); las autorizaciones se pueden editar y eliminar; las familias pueden iniciar un chat con el profesor desde "Mi hijo" → "Escribir al profesor".
 
 ---
 
@@ -162,20 +162,3 @@ glera-estudio-dirigido-app/
 - El primer usuario que entra queda como `familia`; el administrador se asigna a mano (paso 8).
 - Para los iconos PWA, añade `public/icon-192.png` y `public/icon-512.png` (referenciados en `manifest.json`).
 - **Tras cambiar `firestore.rules`** (p. ej. al añadir la colección `evalItems`), hay que redesplegar las reglas: `firebase deploy --only firestore:rules` o pegar el contenido en la consola (Firestore Database → Reglas → Publicar). Sin esto, la app dará errores de permisos.
-
-## Cambios recientes (16–17 oct 2026)
-
-### 16 oct
-- **Calendarios con sombreado** en vez de puntos: los días con sesión quedan sombreados; en Asistencia, Presente verde, Ausente rojo, Justificado ámbar y Actividad azul (distinto de Presente).
-- **Sin menú "Más"**: todas sus opciones pasaron al menú lateral (barra inferior desplazable en móvil).
-- **Notificaciones**: la tarjeta "Cobertura de alertas" quedó justo debajo de "Notificaciones push".
-- **Informes diarios y trimestrales** (antes mensuales; los antiguos mensuales cuentan como trimestrales).
-- **Progreso**: gráfica interactiva con la evolución de cada aspecto en un color; al pulsar un punto se ve la valoración de ese día.
-- Del menú lateral se quitaron Notificaciones y Mi perfil (ya están arriba a la derecha: campana y avatar).
-
-### 17 oct
-- **Entidades educativas**: campo `entityId` en usuarios y alumnos; al primer login sale un selector con radio buttons para elegir la entidad; el admin crea y edita entidades en Usuarios; el admin edita usuarios (rol + entidad); filtro por entidad en Usuarios (filtra usuarios y alumnos) y selector de entidad en Inicio (solo muestra los datos de esa entidad).
-- **Editor con estilos** (negrita, cursiva, listas, enlaces, saltos de línea) en el texto de avisos, en la valoración de informes y en la descripción de autorizaciones. El formato se aplica en todas las tarjetas.
-- **Avisos**: editar y eliminar también desde el aviso destacado de Inicio.
-- **Autorizaciones**: se pueden editar y eliminar (borra también las firmas); "Ver respuestas" muestra los firmantes como "Nombre del hijo (Nombre del padre)" + fecha.
-- **Login**: si falla, muestra el error exacto en la propia pantalla de login.
