@@ -656,6 +656,10 @@ async function renderHome() {
           <h3>${esc(latest.title)}</h3>
           <p>${esc(latest.body)}</p>
           <div class="notice-meta"><span>Equipo de Studio sistema</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
+          ${!fam ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
+            <button class="text-btn" data-action="edit-notice" data-id="${latest.id}">✏️ Editar</button>
+            <button class="text-btn" data-action="delete-notice" data-id="${latest.id}" style="color:var(--danger)">🗑️ Eliminar</button>
+          </div>` : ''}
         </article>` : emptyBox('📋', 'Aún no hay avisos en el tablón.')}
       </div>
       <div class="col-4"><div class="card">
