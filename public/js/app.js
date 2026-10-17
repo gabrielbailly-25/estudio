@@ -2742,6 +2742,7 @@ async function maybeShowEntityPicker() {
     }
   });
 }
+ACTIONS['delete-entity'] = async (d) => {
   if (!confirm('¿Eliminar esta entidad? Los usuarios y alumnos asociados quedarán sin entidad.')) return;
   try {
     await deleteDoc(doc(db, 'entities', d.id));
