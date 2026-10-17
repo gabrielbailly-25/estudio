@@ -118,7 +118,81 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// Caja de estado vacío amable cuando no hay datos.
+/* ---------------- Editor de texto enriquecido ---------------- */
+// Etiquetas y atributos permitidos en el contenido enriquecido.
+const RICH_ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'P', 'BR', 'A']);
+function sanitizeRich(html) {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html || '';
+  const walk = (node) => {
+    for (const child of [...node.childNodes]) {
+      if (child.nodeType === 1) {
+        if (!RICH_ALLOWED.has(child.tagName)) {
+          node.replaceChild(document.createTextNode(child.textContent), child);
+        } else {
+          for (const attr of [...child.attributes]) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on')) { child.removeAttribute(attr.name); continue; }
+            if (child.tagName === 'A') {
+              if (name === 'href' && /^javascript:/i.test(attr.value)) child.removeAttribute(attr.name);
+              else if (name !== 'href') child.removeAttribute(attr.name);
+            } else {
+              child.removeAttribute(attr.name);
+            }
+          }
+          if (child.tagName === 'A') {
+            child.setAttribute('target', '_blank');
+            child.setAttribute('rel', 'noopener');
+          }
+          walk(child);
+        }
+      }
+    }
+  };
+  walk(tmp);
+  return tmp.innerHTML;
+}
+// ¿El texto tiene formato HTML (avisos/informes nuevos) o es texto plano (antiguos)?
+const hasRichHTML = (s) => /<(b|strong|i|em|u|ul|ol|li|p|br|a)[\s>]/.test(s || '');
+// Muestra el cuerpo de un aviso/informe: HTML saneado si tiene formato, texto escapado si es plano.
+const richHTML = (s) => hasRichHTML(s) ? sanitizeRich(s) : esc(s);
+// HTML del editor: barra de formato + zona editable.
+const richEditorHTML = (id, initialHTML) => `
+  <div class="rich-toolbar" role="toolbar" aria-label="Formato de texto">
+    <button type="button" class="rich-btn" data-rich-cmd="bold" title="Negrita"><b>B</b></button>
+    <button type="button" class="rich-btn" data-rich-cmd="italic" title="Cursiva"><i>I</i></button>
+    <button type="button" class="rich-btn" data-rich-cmd="insertUnorderedList" title="Lista con viñetas">• Lista</button>
+    <button type="button" class="rich-btn" data-rich-cmd="insertOrderedList" title="Lista numerada">1. Lista</button>
+    <button type="button" class="rich-btn" data-rich-cmd="createLink" title="Enlace">🔗 Enlace</button>
+  </div>
+  <div class="rich-editor" id="${id}" contenteditable="true" data-rich-editor>${initialHTML ? sanitizeRich(initialHTML) : ''}</div>`;
+// Lee el contenido saneado del editor.
+const richEditorValue = (id) => {
+  const el = document.getElementById(id);
+  return el ? sanitizeRich(el.innerHTML).trim() : '';
+};
+// Texto plano del editor (para validar que no esté vacío).
+const richEditorText = (id) => {
+  const el = document.getElementById(id);
+  return el ? (el.textContent || '').trim() : '';
+};
+// Conecta la barra de formato de un editor.
+function bindRichEditor(container) {
+  container.querySelectorAll('[data-rich-cmd]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const cmd = btn.dataset.richCmd;
+      if (cmd === 'createLink') {
+        const url = prompt('URL del enlace (con https://):');
+        if (url) document.execCommand('createLink', false, url);
+      } else {
+        document.execCommand(cmd, false, null);
+      }
+      const editor = container.querySelector('[data-rich-editor]');
+      if (editor) editor.focus();
+    });
+  });
+}
 const emptyBox = (icon, text) =>
   `<div class="empty"><span class="big">${icon}</span>${esc(text)}</div>`;
 
@@ -405,7 +479,7 @@ const noticeCard = (n, nFamilies = 0) => {
         ${n.tag ? `<span class="tag tag-unread">${esc(n.tag)}</span>` : ''}
       </div>
       <h4>${esc(n.title)}</h4>
-      <p class="muted">${esc(n.body)}</p>
+      <p class="muted">${richHTML(n.body)}</p>
       <div class="meta">${tsToDate(n.createdAt)} · Equipo de Studio sistema</div>
       ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
         <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
@@ -450,8 +524,8 @@ async function renderNotices() {
       </div><span class="badge info">Nuevo aviso</span></div>
       <label for="nc-title">Título</label>
       <input type="text" id="nc-title" maxlength="120" placeholder="Ej.: Cambio de aula">
-      <label for="nc-body">Texto del aviso</label>
-      <textarea id="nc-body" placeholder="Escribe la información para las familias"></textarea>
+      <label>Texto del aviso</label>
+      ${richEditorHTML('nc-body', '')}
       <div class="grid"><div class="col-6">
         <label for="nc-date">Fecha</label>
         <input type="date" id="nc-date" value="${todayStr()}">
@@ -481,12 +555,13 @@ async function renderNotices() {
     <div class="grid"><div class="col-12">
       ${notices.length ? notices.map(n => noticeCard(n, nFamilies)).join('') : emptyBox('📋', 'No hay avisos.')}
     </div></div>`;
+  bindRichEditor($('notices-content'));
 }
 ACTIONS['notice-filter'] = (d) => { state.noticeFilter = d.f; renderNotices(); };
 ACTIONS['publish-notice-inline'] = async () => {
   const title = $('nc-title').value.trim();
-  const body = $('nc-body').value.trim();
-  if (!title || !body) { toast('Escribe un título y un texto.'); return; }
+  const body = richEditorValue('nc-body');
+  if (!title || !richEditorText('nc-body')) { toast('Escribe un título y un texto.'); return; }
   const vis = $('nc-vis').value;
   await addDoc(collection(db, 'notices'), {
     title, body,
@@ -701,10 +776,11 @@ async function renderNoticeCompose() {
     <h2>${editing ? 'Editar aviso' : 'Nuevo aviso'}</h2>
     <label for="nc-title">Título</label>
     <input type="text" id="nc-title" maxlength="120" placeholder="Ej.: Cambio de horario del miércoles" value="${esc(editing?.title || '')}">
-    <label for="nc-body">Texto</label>
-    <textarea id="nc-body" placeholder="Escribe el aviso para las familias…">${esc(editing?.body || '')}</textarea>
+    <label>Texto</label>
+    ${richEditorHTML('nc-body', editing?.body || '')}
     <label><input type="checkbox" id="nc-pinned" ${editing?.pinned ? 'checked' : ''}> Fijar en el tablón</label>
     <button class="btn block" data-action="publish-notice">${editing ? 'Guardar cambios' : 'Publicar aviso'}</button>`;
+  bindRichEditor($('notice-compose-content'));
 }
 ACTIONS['new-notice'] = () => {
   state.editingNoticeId = null;
@@ -723,8 +799,8 @@ ACTIONS['delete-notice'] = async (d) => {
 };
 ACTIONS['publish-notice'] = async () => {
   const title = $('nc-title').value.trim();
-  const body = $('nc-body').value.trim();
-  if (!title || !body) { toast('Escribe un título y un texto.'); return; }
+  const body = richEditorValue('nc-body');
+  if (!title || !richEditorText('nc-body')) { toast('Escribe un título y un texto.'); return; }
   const data = {
     title, body, pinned: $('nc-pinned').checked,
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
@@ -1352,8 +1428,8 @@ async function renderReports() {
             <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
             <label for="rp-title">Resumen</label>
             <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde">
-            <label for="rp-body">Valoración para la familia</label>
-            <textarea id="rp-body" placeholder="Cómo ha ido la sesión, qué reforzar…"></textarea>
+            <label>Valoración para la familia</label>
+            ${richEditorHTML('rp-body', '')}
             <div id="rp-attach-wrap">
               <label for="rp-attach">Documento adjunto (Word o PDF, solo informe trimestral)</label>
               <input type="file" id="rp-attach" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
@@ -1390,6 +1466,7 @@ async function renderReports() {
     const toggleAttach = () => { attachWrap.style.display = typeSel.value === 'trimestral' ? '' : 'none'; };
     typeSel.addEventListener('change', toggleAttach);
     toggleAttach();
+    bindRichEditor($('reports-content'));
   } else {
     if (!state.children.length) {
       c.innerHTML = `<h2>Informes</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
@@ -1474,7 +1551,7 @@ const reportCardExpand = (id, r) => {
     ${open ? `
     <div class="report-body">
       <h5>Resumen</h5>
-      <p style="white-space:pre-wrap">${esc(r.body)}</p>
+      <p style="white-space:pre-wrap">${richHTML(r.body)}</p>
       ${reportAttachmentHTML(r)}
       <div class="meta">Enviado ${tsToDate(r.createdAt)}</div>
       <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al profesor →</button>
@@ -1500,7 +1577,7 @@ function showReportDetail(r) {
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
     <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
-    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${esc(r.body)}</p>
+    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${richHTML(r.body)}</p>
       ${reportAttachmentHTML(r)}</div>`;
   show('reportDetail');
 }
@@ -1514,7 +1591,7 @@ ACTIONS['preview-report'] = () => {
   const s = state.students.find(x => x.id === studentId);
   showReportDetail({
     title: $('rp-title').value.trim() || '(Sin título)',
-    body: $('rp-body').value.trim() || '(Sin texto)',
+    body: richEditorValue('rp-body') || '(Sin texto)',
     type: $('rp-type').value,
     month: $('rp-month').value || null,
     studentName: s ? `${s.firstName} ${s.lastName || ''}`.trim() : '',
@@ -1524,9 +1601,9 @@ ACTIONS['preview-report'] = () => {
 ACTIONS['publish-report2'] = async () => {
   const studentId = $('rp-student').value;
   const title = $('rp-title').value.trim();
-  const body = $('rp-body').value.trim();
+  const body = richEditorValue('rp-body');
   if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
-  if (!title || !body) { toast('Escribe un título y el texto del informe.'); return; }
+  if (!title || !richEditorText('rp-body')) { toast('Escribe un título y el texto del informe.'); return; }
   const type = $('rp-type').value;
   // Sube el adjunto si lo hay (solo trimestral).
   let attachmentUrl = null, attachmentName = null;
