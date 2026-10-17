@@ -480,7 +480,7 @@ const noticeCard = (n, nFamilies = 0) => {
         ${n.tag ? `<span class="tag tag-unread">${esc(n.tag)}</span>` : ''}
       </div>
       <h4>${esc(n.title)}</h4>
-      <p class="muted">${richHTML(n.body)}</p>
+      <div class="muted">${richHTML(n.body)}</div>
       <div class="meta">${tsToDate(n.createdAt)} · Equipo de Studio sistema</div>
       ${isMonitor() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
         <button class="text-btn" data-action="edit-notice" data-id="${n.id}">✏️ Editar</button>
@@ -730,7 +730,7 @@ async function renderHome() {
         <article class="card notice-feature clickable" data-action="go" data-screen="notices">
           <span class="badge">${latest.pinned ? 'Fijado · ' : ''}Último aviso</span>
           <h3>${esc(latest.title)}</h3>
-          <p>${richHTML(latest.body)}</p>
+          <div>${richHTML(latest.body)}</div>
           <div class="notice-meta"><span>Equipo de Studio sistema</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
           ${!fam ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
             <button class="text-btn" data-action="edit-notice" data-id="${latest.id}">✏️ Editar</button>
@@ -1552,7 +1552,7 @@ const reportCardExpand = (id, r) => {
     ${open ? `
     <div class="report-body">
       <h5>Resumen</h5>
-      <p style="white-space:pre-wrap">${richHTML(r.body)}</p>
+      <div style="white-space:pre-wrap">${richHTML(r.body)}</div>
       ${reportAttachmentHTML(r)}
       <div class="meta">Enviado ${tsToDate(r.createdAt)}</div>
       <button class="text-btn" data-action="contact-monitor" style="margin-top:8px">Responder al profesor →</button>
@@ -1578,7 +1578,7 @@ function showReportDetail(r) {
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
     <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
-    <div class="card" style="margin-top:12px"><p style="white-space:pre-wrap">${richHTML(r.body)}</p>
+    <div class="card" style="margin-top:12px"><div style="white-space:pre-wrap">${richHTML(r.body)}</div>
       ${reportAttachmentHTML(r)}</div>`;
   show('reportDetail');
 }
@@ -2044,7 +2044,7 @@ ACTIONS['open-auth'] = async (d) => {
   $('auth-detail-content').innerHTML = `
     <button class="back" data-action="go" data-screen="auths">‹ Autorizaciones</button>
     <h2>${esc(a.title)}</h2>
-    <div class="card"><p style="white-space:pre-wrap">${richHTML(a.description)}</p>
+    <div class="card"><div style="white-space:pre-wrap">${richHTML(a.description)}</div>
       ${a.dueDate ? `<div class="meta">Límite: ${fmtDate(a.dueDate)}</div>` : ''}</div>
     ${!isFamilia() ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
       <button class="text-btn" data-action="edit-auth" data-id="${d.id}">✏️ Editar</button>
@@ -2368,7 +2368,7 @@ async function renderNotifications() {
             <span class="tag ${n.read ? 'tag-read' : 'tag-unread'}">${n.read ? 'Leída' : 'Sin leer'}</span>
           </div>
           <h4>${esc(n.title)}</h4>
-          <p class="muted">${richHTML(n.body || '')}</p>
+          <div class="muted">${richHTML(n.body || '')}</div>
           <div class="meta">${tsToDate(n.createdAt)}</div>
         </div>
         <span class="text-btn">Abrir</span>
