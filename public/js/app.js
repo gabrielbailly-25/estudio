@@ -289,11 +289,26 @@ $('btn-google').addEventListener('click', async () => {
   const originalText = btn.innerHTML;
   btn.innerHTML = 'Accediendo…';
   const restore = () => { btn.disabled = false; btn.innerHTML = originalText; };
+  // Muestra el error exacto en la pantalla de login para diagnosticar.
+  const showLoginError = (code) => {
+    let el = $('login-error');
+    if (!el) {
+      el = document.createElement('p');
+      el.id = 'login-error';
+      el.className = 'warning';
+      btn.parentElement.insertBefore(el, btn);
+    }
+    el.classList.remove('hidden');
+    el.textContent = code === 'auth/unauthorized-domain'
+      ? 'Dominio no autorizado en Firebase. Añade este dominio en Firebase Console → Authentication → Settings → Dominios autorizados.'
+      : 'Error de acceso: ' + (code || 'desconocido') + '. Inténtalo de nuevo.';
+  };
   try {
     // Intenta popup primero (funciona en la mayoría de navegadores).
     await signInWithPopup(auth, provider);
   } catch (err) {
     console.error('Popup login:', err && err.code);
+    showLoginError(err && err.code);
     // Si el popup está bloqueado o falla, usa redirección (típico en móvil).
     if (err && (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user' ||
                 err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-window-blocked' ||
@@ -304,6 +319,7 @@ $('btn-google').addEventListener('click', async () => {
         return; // La página navega a Google; no restaurar el botón.
       } catch (e) {
         console.error('Redirect login:', e);
+        showLoginError(e && e.code);
         toast('No se pudo iniciar sesión. Inténtalo de nuevo.');
       }
     } else {
