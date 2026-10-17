@@ -35,6 +35,14 @@ service cloud.firestore {
       return myUid() in get(/databases/$(database)/documents/students/$(studentId)).data.familyUids;
     }
 
+    // ---------- Entidades educativas ----------
+    // Todos los usuarios identificados pueden ver la lista (para elegir la suya).
+    // Solo el admin crea, edita o elimina entidades.
+    match /entities/{entityId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     // ---------- Usuarios ----------
     match /users/{uid} {
       // Cada uno lee su ficha; los monitores pueden ver la lista para gestionar.
