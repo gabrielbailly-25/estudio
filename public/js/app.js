@@ -120,7 +120,7 @@ function toast(msg) {
 
 /* ---------------- Editor de texto enriquecido ---------------- */
 // Etiquetas y atributos permitidos en el contenido enriquecido.
-const RICH_ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'P', 'BR', 'A']);
+const RICH_ALLOWED = new Set(['B', 'STRONG', 'I', 'EM', 'U', 'UL', 'OL', 'LI', 'P', 'BR', 'A', 'DIV']);
 function sanitizeRich(html) {
   const tmp = document.createElement('div');
   tmp.innerHTML = html || '';
@@ -154,8 +154,8 @@ function sanitizeRich(html) {
 }
 // ¿El texto tiene formato HTML (avisos/informes nuevos) o es texto plano (antiguos)?
 const hasRichHTML = (s) => /<(b|strong|i|em|u|ul|ol|li|p|br|a)[\s>]/.test(s || '');
-// Muestra el cuerpo de un aviso/informe: HTML saneado si tiene formato, texto escapado si es plano.
-const richHTML = (s) => hasRichHTML(s) ? sanitizeRich(s) : esc(s);
+// Muestra el cuerpo de un aviso/informe: HTML saneado si tiene formato, texto escapado si es plano (respetando saltos de línea).
+const richHTML = (s) => hasRichHTML(s) ? sanitizeRich(s) : esc(s).replace(/\n/g, '<br>');
 // HTML del editor: barra de formato + zona editable.
 const richEditorHTML = (id, initialHTML) => `
   <div class="rich-toolbar" role="toolbar" aria-label="Formato de texto">
@@ -729,7 +729,7 @@ async function renderHome() {
         <article class="card notice-feature clickable" data-action="go" data-screen="notices">
           <span class="badge">${latest.pinned ? 'Fijado · ' : ''}Último aviso</span>
           <h3>${esc(latest.title)}</h3>
-          <p>${esc(latest.body)}</p>
+          <p>${richHTML(latest.body)}</p>
           <div class="notice-meta"><span>Equipo de Studio sistema</span><span>•</span><span>${tsToDate(latest.createdAt)}</span></div>
           ${!fam ? `<div class="row" style="justify-content:flex-start;margin-top:10px">
             <button class="text-btn" data-action="edit-notice" data-id="${latest.id}">✏️ Editar</button>
@@ -2322,7 +2322,7 @@ async function renderNotifications() {
             <span class="tag ${n.read ? 'tag-read' : 'tag-unread'}">${n.read ? 'Leída' : 'Sin leer'}</span>
           </div>
           <h4>${esc(n.title)}</h4>
-          <p class="muted">${esc(n.body || '')}</p>
+          <p class="muted">${richHTML(n.body || '')}</p>
           <div class="meta">${tsToDate(n.createdAt)}</div>
         </div>
         <span class="text-btn">Abrir</span>
