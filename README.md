@@ -1,10 +1,10 @@
-# App Estudio Dirigido Glera — versión real (MVP)
+# App Studio sistema — Estudio Dirigido
 
-App web móvil (PWA) en español para la actividad de **Estudio Dirigido** de la Asociación Juvenil Glera: comunicación entre **familias y monitores** con tablón de avisos, asistencia diaria, evaluación diaria, informes mensuales, chat, autorizaciones, calendario y notificaciones push.
+App web móvil (PWA) en español para la actividad de **Estudio Dirigido**: comunicación entre **familias y profesores** con tablón de avisos, asistencia diaria, evaluación diaria, informes diarios y trimestrales, chat, autorizaciones, calendario y notificaciones push. La app la usan diversas entidades educativas; cada usuario y alumno pertenece a una entidad.
 
 **Stack:** HTML/CSS/JS plano, sin paso de compilación (ideal para GitHub + Vercel). Firebase: Authentication (login con Google), Firestore, Cloud Messaging (push) y Storage.
 
-**Pantallas:** las familias ven Inicio (dashboard), Mi hijo, Informes, Avisos, Asistencia, Chat y Más; los monitores ven Inicio, Asistencia, Evaluar, Chat y Más (más Usuarios solo para el admin). Los avisos del tablón se pueden editar y eliminar (monitores); las familias pueden iniciar un chat con el monitor desde "Mi hijo" → "Escribir al monitor".
+**Pantallas:** las familias ven Inicio (dashboard), Mi hijo, Informes, Avisos, Asistencia y Chat; los profesores ven Inicio, Informes, Avisos, Pasar lista, Chat, Autorizaciones, Evaluación diaria, Calendario y Usuarios (solo admin). Notificaciones y Mi perfil están arriba a la derecha (campana y avatar). Los avisos del tablón se pueden editar y eliminar (profesores); las familias pueden iniciar un chat con el profesor desde "Mi hijo" → "Escribir al profesor".
 
 ---
 
@@ -66,7 +66,7 @@ firebase deploy --only firestore:rules,firestore:indexes
 1. Abre la app y entra con **Continuar con Google**.
 2. En la consola de Firestore verás tu documento en `users/{tu-uid}` con `role: "familia"`.
 3. Edítalo y cambia `role` a `"admin"`.
-4. A partir de ahí gestiona todo desde la pantalla **Usuarios** de la app (visible solo para el admin, en la barra de navegación): cambia el `rol` de cada usuario con el desplegable (Administrador / Monitor/a / Familia), y da de alta alumnos en el bloque "Alumnos" vinculándolos a sus familias con las casillas.
+4. A partir de ahí gestiona todo desde la pantalla **Usuarios** de la app (visible solo para el admin, en la barra de navegación): cambia el `rol` de cada usuario con el desplegable (Administrador / Profesor/a / Familia) y su entidad, y da de alta alumnos en el bloque "Alumnos" vinculándolos a sus familias con las casillas y asignándoles entidad.
 
 > ⚠️ **Tras modificar `firestore.rules` hay que volver a desplegarlas** para que el cambio tenga efecto. Cambios recientes que lo requieren:
 > - La pantalla "Usuarios" necesita el permiso de admin para editar roles.
@@ -140,24 +140,42 @@ glera-estudio-dirigido-app/
 
 | Colección | Contenido |
 |---|---|
-| `users/{uid}` | `role` (admin/monitor/familia), `displayName`, `email` |
+| `entities/{id}` | `name` — entidades educativas (las crea/edita el admin) |
+| `users/{uid}` | `role` (admin/monitor/familia), `displayName`, `email`, `entityId` |
 | `users/{uid}/pushTokens/{token}` | tokens FCM del dispositivo |
 | `users/{uid}/notifications/{id}` | centro de notificaciones (la crea el backend) |
-| `students/{id}` | `firstName`, `lastName`, `group`, `familyUids: []` + datos de la actividad: `monitorName`, `schedule`, `classroom`, `startDate` (YYYY-MM-DD), `pickup` (editables por el admin en Usuarios) |
+| `students/{id}` | `firstName`, `lastName`, `group`, `familyUids: []`, `entityId`, `teacherUid` + datos de la actividad: `monitorName`, `schedule`, `classroom`, `startDate` (YYYY-MM-DD), `pickup` (editables por el admin en Usuarios) |
 | `sessions/{id}` | `date` (YYYY-MM-DD), `startTime`, `endTime`, `title` |
 | `attendance/{studentId}_{date}` | `studentId`, `date`, `status` (presente/ausente/justificado) |
 | `evaluations/{studentId}_{date}` | `studentId`, `date`, `scores: { itemId: valor }` (1-3), `comment` · (formato antiguo: `puntualidad`, `agenda`, `aprovechamiento`) |
-| `evalItems/{id}` | `label`, `order`, `active` — ítems configurables de la evaluación diaria (los gestiona el monitor con ⚙️) |
-| `reports/{id}` | `studentId`, `title`, `body`, `type` (diario/mensual), `month` (YYYY-MM) |
-| `notices/{id}` | `title`, `body`, `pinned` (tablón de anuncios) |
-| `authorizations/{id}` | `title`, `description`, `dueDate` |
+| `evalItems/{id}` | `label`, `order`, `active` — ítems configurables de la evaluación diaria (los gestiona el profesor con ⚙️) |
+| `reports/{id}` | `studentId`, `title`, `body` (con formato), `type` (diario/trimestral), `month` (YYYY-MM) |
+| `notices/{id}` | `title`, `body` (con formato), `pinned` (tablón de anuncios) |
+| `authorizations/{id}` | `title`, `description` (con formato), `dueDate` |
 | `authorizations/{id}/signatures/{uid}` | `signedAt`, `displayName` |
 | `conversations/{id}` | `participantUids: []`, `studentId`, `lastMessageText`, `updatedAt` |
 | `messages/{id}` | `conversationId`, `participantUids: []`, `senderUid`, `text`, `createdAt` |
 
 ## Notas
 
-- La app **arranca vacía**: no incluye datos de ejemplo. Crea sesiones, alumnos y avisos desde la vista de monitor/administrador.
+- La app **arranca vacía**: no incluye datos de ejemplo. Crea sesiones, alumnos y avisos desde la vista de profesor/administrador.
 - El primer usuario que entra queda como `familia`; el administrador se asigna a mano (paso 8).
 - Para los iconos PWA, añade `public/icon-192.png` y `public/icon-512.png` (referenciados en `manifest.json`).
 - **Tras cambiar `firestore.rules`** (p. ej. al añadir la colección `evalItems`), hay que redesplegar las reglas: `firebase deploy --only firestore:rules` o pegar el contenido en la consola (Firestore Database → Reglas → Publicar). Sin esto, la app dará errores de permisos.
+
+## Cambios recientes (16–17 oct 2026)
+
+### 16 oct
+- **Calendarios con sombreado** en vez de puntos: los días con sesión quedan sombreados; en Asistencia, Presente verde, Ausente rojo, Justificado ámbar y Actividad azul (distinto de Presente).
+- **Sin menú "Más"**: todas sus opciones pasaron al menú lateral (barra inferior desplazable en móvil).
+- **Notificaciones**: la tarjeta "Cobertura de alertas" quedó justo debajo de "Notificaciones push".
+- **Informes diarios y trimestrales** (antes mensuales; los antiguos mensuales cuentan como trimestrales).
+- **Progreso**: gráfica interactiva con la evolución de cada aspecto en un color; al pulsar un punto se ve la valoración de ese día.
+- Del menú lateral se quitaron Notificaciones y Mi perfil (ya están arriba a la derecha: campana y avatar).
+
+### 17 oct
+- **Entidades educativas**: campo `entityId` en usuarios y alumnos; al primer login sale un selector con radio buttons para elegir la entidad; el admin crea y edita entidades en Usuarios; el admin edita usuarios (rol + entidad); filtro por entidad en Usuarios (filtra usuarios y alumnos) y selector de entidad en Inicio (solo muestra los datos de esa entidad).
+- **Editor con estilos** (negrita, cursiva, listas, enlaces, saltos de línea) en el texto de avisos, en la valoración de informes y en la descripción de autorizaciones. El formato se aplica en todas las tarjetas.
+- **Avisos**: editar y eliminar también desde el aviso destacado de Inicio.
+- **Autorizaciones**: se pueden editar y eliminar (borra también las firmas); "Ver respuestas" muestra los firmantes como "Nombre del hijo (Nombre del padre)" + fecha.
+- **Login**: si falla, muestra el error exacto en la propia pantalla de login.
