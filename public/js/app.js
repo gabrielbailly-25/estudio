@@ -29,7 +29,6 @@ const state = {
   attMarks: {},     // marcas temporales al pasar lista
   evalMarks: {},    // marcas temporales al evaluar (clave: id del ítem)
   evalItems: [],    // ítems de evaluación configurables (colección evalItems)
-  reportFilter: 'all', // filtro de informes en vista familia: all | diario | trimestral
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   editingNoticeId: null, // aviso en edición (null = crear nuevo)
   editingAuthId: null, // autorización en edición (null = crear nueva)
@@ -65,7 +64,7 @@ const NAV_ICONS = {
 
 // Título de la barra superior por pantalla.
 const TITLES = {
-  home: 'Inicio', attendance: 'Asistencia', evaluate: 'Evaluación diaria',
+  home: 'Inicio', attendance: 'Asistencia', evaluate: 'Informe diario',
   progress: 'Progreso', reports: 'Informes', reportDetail: 'Informe',
   reportCompose: 'Nuevo informe', chatList: 'Chat', chatView: 'Chat',
   auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
@@ -309,7 +308,7 @@ function renderNav() {
       { id: 'attendance', label: 'Pasar lista', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
       { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
-      { id: 'evaluate', label: 'Evaluación diaria', icon: 'evaluate' },
+      { id: 'evaluate', label: 'Informe diario', icon: 'evaluate' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar' },
       { id: 'users', label: 'Usuarios', icon: 'users' },
     ];
@@ -713,7 +712,7 @@ async function renderHome() {
       <div class="col-12"><div class="section-head"><h3>Acciones rápidas</h3></div></div>
       <div class="col-12"><div class="card"><div class="filters" style="margin:0">
         <button class="btn" data-action="go" data-screen="attendance">Pasar lista</button>
-        <button class="btn secondary" data-action="go" data-screen="evaluate">Evaluar sesión</button>
+        <button class="btn secondary" data-action="go" data-screen="evaluate">Informe diario</button>
         <button class="btn secondary" data-action="new-notice">Nuevo aviso</button>
       </div></div></div>`;
   }
@@ -834,6 +833,7 @@ async function renderAttendance() {
       </div><span class="tag tag-info">Hoy</span></div>
       <label for="att-date">Fecha</label>
       <input type="date" id="att-date" value="${today}">
+      <p class="meta" style="margin-top:6px">Solo se muestran los alumnos que acuden ese día según su horario habitual.</p>
       <div class="card" style="margin-top:12px"><div id="att-rows"></div>
         <div class="cal-legend" style="justify-content:flex-start;margin:12px 0">
           <span><i class="cal-chip st-presente"></i>Presente</span>
@@ -883,16 +883,59 @@ async function renderAttendance() {
   }
 }
 
+// Días de semana que un alumno acude según su horario habitual (p. ej. "L–J · 17:00–18:30").
+// Devuelve null si el horario no indica días: entonces se muestra siempre.
+const WEEKDAY_NAMES = { lunes: 1, martes: 2, miercoles: 3, jueves: 4, viernes: 5, sabado: 6, domingo: 0 };
+const WEEKDAY_LETTER = { l: 1, m: 2, x: 3, j: 4, v: 5, s: 6, d: 0 };
+function scheduleDays(schedule) {
+  if (!schedule) return null;
+  let rest = schedule.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const days = new Set();
+  for (const [name, wd] of Object.entries(WEEKDAY_NAMES)) {
+    if (new RegExp(`\\b${name}\\b`).test(rest)) {
+      days.add(wd);
+      rest = rest.replace(new RegExp(`\\b${name}\\b`, 'g'), ' ');
+    }
+  }
+  // Letras sueltas y rangos (L, M, X, J, V, S, D): "L–J", "L, X, V".
+  const re = /(?:^|[^a-zñ])([lmxjvsd])(?:\s*[–—\-]\s*([lmxjvsd]))?(?![a-zñ])/g;
+  let m;
+  while ((m = re.exec(rest)) !== null) {
+    const a = WEEKDAY_LETTER[m[1]];
+    if (a === undefined) continue;
+    if (m[2] && WEEKDAY_LETTER[m[2]] !== undefined) {
+      let cur = a;
+      const b = WEEKDAY_LETTER[m[2]];
+      for (let i = 0; i < 7; i++) {
+        days.add(cur);
+        if (cur === b) break;
+        cur = (cur + 1) % 7;
+      }
+    } else {
+      days.add(a);
+    }
+  }
+  return days.size ? days : null;
+}
+function attendsOnDay(student, dateStr) {
+  const days = scheduleDays(student.schedule);
+  if (!days) return true; // sin días indicados, se muestra siempre
+  const [y, mo, d] = dateStr.split('-').map(Number);
+  return days.has(new Date(y, mo - 1, d).getDay());
+}
+
 async function loadAttendanceRows(date) {
   const box = $('att-rows');
   const snap = await getDocs(query(collection(db, 'attendance'), where('date', '==', date)));
   state.attMarks = {};
   snap.docs.forEach(d => { state.attMarks[d.data().studentId] = d.data().status; });
-  if (!state.students.length) {
-    box.innerHTML = emptyBox('✅', 'Aún no hay alumnos dados de alta.');
+  // Solo los alumnos que acuden a la actividad ese día (según su horario habitual).
+  const attending = state.students.filter(s => attendsOnDay(s, date));
+  if (!attending.length) {
+    box.innerHTML = emptyBox('✅', 'Ningún alumno acude hoy según su horario habitual.');
     return;
   }
-  box.innerHTML = state.students.map(s => {
+  box.innerHTML = attending.map(s => {
     const cur = state.attMarks[s.id] || 'presente';
     return `<div class="att-row">
       <span class="avatar-sm">${esc(initialsOf(s.firstName + ' ' + (s.lastName || '')))}</span>
@@ -914,7 +957,8 @@ ACTIONS['att-mark'] = (d, el) => {
 };
 ACTIONS['save-attendance'] = async () => {
   const date = $('att-date').value || todayStr();
-  for (const s of state.students) {
+  // Solo se guarda la lista de los que acuden ese día.
+  for (const s of state.students.filter(x => attendsOnDay(x, date))) {
     await setDoc(doc(db, 'attendance', `${s.id}_${date}`), {
       studentId: s.id, date, status: state.attMarks[s.id] || 'presente',
       markedByUid: state.user.uid, createdAt: serverTimestamp(),
@@ -1025,12 +1069,12 @@ ACTIONS['att-month'] = (d) => {
   loadAttendanceHistory();
 };
 
-/* ---------------- Evaluación diaria (monitor) / Progreso (familia) ---------------- */
+/* ---------------- Informe diario (monitor) / Progreso (familia) ---------------- */
 
 async function renderEvaluate() {
   const c = $('evaluate-content');
   if (!state.students.length) {
-    c.innerHTML = `<h2>Evaluación diaria</h2>` + emptyBox('📝', 'Aún no hay alumnos dados de alta.');
+    c.innerHTML = `<h2>Informe diario</h2>` + emptyBox('📝', 'Aún no hay alumnos dados de alta.');
     return;
   }
   const items = (await loadEvalItems()).filter(i => i.active !== false);
@@ -1045,9 +1089,9 @@ async function renderEvaluate() {
   } catch (e) {}
   const total = state.students.length;
   const pct = total ? Math.round(nDone / total * 100) : 0;
-  const selStudent = state.students[0];
+  const selStudent = state.students.find(s => s.id === state.evalStudentId) || state.students[0];
   c.innerHTML = `
-    <div class="section-head"><h2>Evaluación diaria</h2>
+    <div class="section-head"><h2>Informe diario</h2>
       <button class="icon-btn" data-action="go" data-screen="evalItems" aria-label="Configurar ítems de evaluación">⚙️</button>
     </div>
     ${items.length ? `
@@ -1057,7 +1101,7 @@ async function renderEvaluate() {
         <div style="flex:1"><strong>${esc(selStudent.firstName)} ${esc(selStudent.lastName || '')}</strong>
           <div class="meta">Valoración de hoy · ${fmtDate(today)}</div></div>
         <select id="ev-student" style="width:auto;flex:0 0 auto" aria-label="Alumno">${state.students.map(s =>
-          `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+          `<option value="${s.id}"${s.id === selStudent.id ? ' selected' : ''}>${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
       </div>
       <input type="hidden" id="ev-date" value="${today}">
       ${items.map(it => `
@@ -1082,11 +1126,10 @@ async function renderEvaluate() {
     : emptyBox('⚙️', 'No hay ítems de evaluación activos. Configúralos con el botón ⚙️.')}`;
   const sel = $('ev-student');
   if (sel) sel.addEventListener('change', () => {
-    // Recarga para mostrar el alumno seleccionado en la cabecera.
+    // Guarda el alumno elegido antes de recargar: renderEvaluate es asíncrono
+    // y sin esto la pantalla se reconstruía con el primer alumno de la lista.
+    state.evalStudentId = sel.value;
     renderEvaluate();
-    // Restaura la selección.
-    const s2 = $('ev-student');
-    if (s2) s2.value = sel.value;
   });
 }
 ACTIONS['ev-mark'] = (d, el) => {
@@ -1104,7 +1147,7 @@ ACTIONS['save-evaluation'] = async () => {
     comment: $('ev-comment').value.trim(),
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
   }, { merge: true });
-  toast('Evaluación guardada.');
+  toast('Informe diario guardado.');
 };
 
 /* ---------------- Mi hijo (familia) ---------------- */
@@ -1288,7 +1331,7 @@ async function renderEvalItems() {
   const c = $('evalitems-content');
   const items = await loadEvalItems();
   c.innerHTML = `
-    <button class="back" data-action="go" data-screen="evaluate">‹ Evaluación diaria</button>
+    <button class="back" data-action="go" data-screen="evaluate">‹ Informe diario</button>
     <div class="section-head"><div><h3>Ítems de evaluación</h3>
       <p>Define qué se valora cada día (escala 1-3).</p></div></div>
     <div class="item-list">
@@ -1389,10 +1432,10 @@ Object.assign(RENDER, {
 async function renderReports() {
   const c = $('reports-content');
   if (isMonitor()) {
-    // Estado del mes: cuenta diarios/trimestrales creados este mes.
+    // Estado del mes: cuenta trimestrales creados este mes.
     const msnap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
     const ym = todayStr().slice(0, 7);
-    let nDiario = 0, nTrimestral = 0, nLeidos = 0;
+    let nTrimestral = 0, nLeidos = 0;
     const monthlyDone = new Set();
     msnap.docs.forEach(d => {
       const r = d.data();
@@ -1400,7 +1443,6 @@ async function renderReports() {
       try { rym = r.createdAt.toDate().toISOString().slice(0, 7); } catch { /* sin fecha */ }
       if (rym === ym) {
         if (reportType(r) === 'trimestral') { nTrimestral++; monthlyDone.add(r.studentId); }
-        else nDiario++;
         if ((r.readBy || []).length) nLeidos++;
       }
     });
@@ -1420,19 +1462,14 @@ async function renderReports() {
             <label for="rp-student">Alumno</label>
             <select id="rp-student">${state.students.map(s =>
               `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
-            <label for="rp-type">Tipo de informe</label>
-            <select id="rp-type">
-              <option value="diario">Informe diario</option>
-              <option value="trimestral">Informe trimestral</option>
-            </select>
-            <label for="rp-month">Mes</label>
+            <label for="rp-month">Trimestre (mes de referencia)</label>
             <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
             <label for="rp-title">Resumen</label>
             <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde">
             <label>Valoración para la familia</label>
             ${richEditorHTML('rp-body', '')}
             <div id="rp-attach-wrap">
-              <label for="rp-attach">Documento adjunto (Word o PDF, solo informe trimestral)</label>
+              <label for="rp-attach">Documento adjunto (Word o PDF)</label>
               <input type="file" id="rp-attach" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
               <p class="meta">Opcional. Máx. 10 MB.</p>
             </div>
@@ -1446,27 +1483,23 @@ async function renderReports() {
         <div class="col-5">
           <div class="card">
             <div class="section-head"><h3>Estado del mes</h3><span class="tag">${fmtMonth(ym).split(' de ')[0]}</span></div>
-            <div class="history-line"><span>Informes diarios enviados</span><b>${nDiario}</b></div>
             <div class="history-line"><span>Trimestrales pendientes</span><b style="color:var(--accent)">${nPendientes}</b></div>
             <div class="history-line"><span>Leídos por familias</span><b style="color:var(--brand)">${nLeidos}</b></div>
           </div>
           ${lastR ? `<div class="card" style="margin-top:16px">
             <h3>Último informe</h3>
-            <p class="muted">${esc(lastStudent ? `${lastStudent.firstName} ${lastStudent.lastName || ''}`.trim() : '')} · ${reportType(lastR) === 'trimestral' ? 'Trimestral' : 'Diario'} · ${tsToDate(lastR.createdAt)}</p>
+            <p class="muted">${esc(lastStudent ? `${lastStudent.firstName} ${lastStudent.lastName || ''}`.trim() : '')} · ${tsToDate(lastR.createdAt)}</p>
             <button class="text-btn" data-action="open-report" data-id="${last.id}">Abrir vista previa →</button>
           </div>` : ''}
         </div>
       </div>
       <div class="section-head" style="margin-top:8px"><h3>Enviados</h3></div>
       <div id="reports-list"></div>`;
-    $('reports-list').innerHTML = msnap.empty
-      ? emptyBox('📄', 'Aún no hay informes.')
-      : msnap.docs.map(d => reportCard(d.id, d.data())).join('');
-    // El adjunto solo se muestra para informes trimestrales.
-    const typeSel = $('rp-type'), attachWrap = $('rp-attach-wrap');
-    const toggleAttach = () => { attachWrap.style.display = typeSel.value === 'trimestral' ? '' : 'none'; };
-    typeSel.addEventListener('change', toggleAttach);
-    toggleAttach();
+    // Solo trimestrales (los antiguos diarios ya no se muestran aquí).
+    const sentDocs = msnap.docs.filter(d => reportType(d.data()) === 'trimestral');
+    $('reports-list').innerHTML = sentDocs.length
+      ? sentDocs.map(d => reportCard(d.id, d.data())).join('')
+      : emptyBox('📄', 'Aún no hay informes.');
     bindRichEditor($('reports-content'));
   } else {
     if (!state.children.length) {
@@ -1474,39 +1507,31 @@ async function renderReports() {
       return;
     }
     const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
-    const f = state.reportFilter || 'all';
     c.innerHTML = `
       <div class="screen-head"><div>
         <h2>Informes de ${esc(child.firstName)}</h2>
-        <p class="muted">Consulta el seguimiento diario y los informes trimestrales enviados por el profesor.</p>
+        <p class="muted">Consulta los informes trimestrales enviados por el profesor.</p>
       </div></div>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
-      <div class="filters">
-        <button class="filter ${f === 'all' ? 'active' : ''}" data-action="report-filter" data-f="all">Todos</button>
-        <button class="filter ${f === 'diario' ? 'active' : ''}" data-action="report-filter" data-f="diario">Diarios</button>
-        <button class="filter ${f === 'trimestral' ? 'active' : ''}" data-action="report-filter" data-f="trimestral">Trimestrales</button>
-      </div>
       <div id="reports-list" style="margin-top:12px"></div>`;
     const sel = $('rep-child');
     if (sel) sel.addEventListener('change', () => { state.selectedChildId = sel.value; loadReports(); });
     await loadReports();
   }
 }
-ACTIONS['report-filter'] = (d) => { state.reportFilter = d.f; renderReports(); };
 
 const reportCard = (id, r) => `
   <div class="card" data-action="open-report" data-id="${id}" style="cursor:pointer">
     <h3>${esc(r.title)}</h3>
-    <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
+    <div class="meta">${r.month ? fmtMonth(r.month) + ' · ' : ''}${tsToDate(r.createdAt)}</div>
   </div>`;
 
 async function loadReports() {
   const box = $('reports-list');
   const snap = await getDocs(query(collection(db, 'reports'),
     where('studentId', '==', state.selectedChildId), orderBy('createdAt', 'desc'), limit(40)));
-  let docs = snap.docs;
-  const f = state.reportFilter || 'all';
-  if (f !== 'all') docs = docs.filter(d => reportType(d.data()) === f);
+  // Solo trimestrales.
+  const docs = snap.docs.filter(d => reportType(d.data()) === 'trimestral');
   // Contador de guardados.
   const head = box.parentElement && box.parentElement.querySelector('.screen-head');
   if (head && !head.querySelector('.save-count')) {
@@ -1518,7 +1543,7 @@ async function loadReports() {
   if (badge) badge.textContent = `${docs.length} guardado${docs.length === 1 ? '' : 's'}`;
   box.innerHTML = docs.length
     ? docs.map(d => reportCardExpand(d.id, d.data())).join('')
-    : emptyBox('📄', f === 'all' ? 'Aún no hay informes.' : 'No hay informes de este tipo.');
+    : emptyBox('📄', 'Aún no hay informes.');
 }
 
 const reportDateBlock = (r) => {
@@ -1544,7 +1569,7 @@ const reportCardExpand = (id, r) => {
     <div class="report-head" data-action="toggle-report" data-id="${id}">
       ${reportDateBlock(r)}
       <div class="report-main">
-        <span class="tag ${tipo === 'trimestral' ? 'tag-info' : 'tag-diario'}">${tipo === 'trimestral' ? 'Trimestral' : 'Diario'}</span>
+        <span class="tag tag-info">Trimestral</span>
         <h4>${esc(r.title)}</h4>
       </div>
       <button class="expand-btn" aria-label="${open ? 'Contraer' : 'Expandir'}">${open ? '–' : '+'}</button>
@@ -1577,7 +1602,7 @@ function showReportDetail(r) {
     <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
-    <div class="meta">${r.type ? `<span class="tag">${r.type === 'trimestral' ? 'Trimestral' : 'Diario'}</span> ` : ''}${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
+    <div class="meta">${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
     <div class="card" style="margin-top:12px"><div style="white-space:pre-wrap">${richHTML(r.body)}</div>
       ${reportAttachmentHTML(r)}</div>`;
   show('reportDetail');
@@ -1593,7 +1618,7 @@ ACTIONS['preview-report'] = () => {
   showReportDetail({
     title: $('rp-title').value.trim() || '(Sin título)',
     body: richEditorValue('rp-body') || '(Sin texto)',
-    type: $('rp-type').value,
+    type: 'trimestral',
     month: $('rp-month').value || null,
     studentName: s ? `${s.firstName} ${s.lastName || ''}`.trim() : '',
     _preview: true,
@@ -1605,11 +1630,10 @@ ACTIONS['publish-report2'] = async () => {
   const body = richEditorValue('rp-body');
   if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
   if (!title || !richEditorText('rp-body')) { toast('Escribe un título y el texto del informe.'); return; }
-  const type = $('rp-type').value;
-  // Sube el adjunto si lo hay (solo trimestral).
+  // Sube el adjunto si lo hay.
   let attachmentUrl = null, attachmentName = null;
   const fileInput = $('rp-attach');
-  if (type === 'trimestral' && fileInput && fileInput.files.length) {
+  if (fileInput && fileInput.files.length) {
     const file = fileInput.files[0];
     if (file.size > 10 * 1024 * 1024) { toast('El archivo supera los 10 MB.'); return; }
     try {
@@ -1621,13 +1645,13 @@ ACTIONS['publish-report2'] = async () => {
       attachmentName = file.name;
     } catch (err) {
       console.error(err);
-      toast('No se pudo subir el documento.');
+      toast('No se pudo subir el documento (' + (err.code || 'error') + '). Revisa que las reglas de Storage estén publicadas.');
       return;
     }
   }
   await addDoc(collection(db, 'reports'), {
     studentId, title, body,
-    type,
+    type: 'trimestral',
     month: $('rp-month').value || null,
     attachmentUrl, attachmentName,
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
