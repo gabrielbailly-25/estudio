@@ -32,6 +32,8 @@ const state = {
   pushToken: null,   // token FCM de este dispositivo (si el push está activo)
   editingNoticeId: null, // aviso en edición (null = crear nuevo)
   editingAuthId: null, // autorización en edición (null = crear nueva)
+  reportDraft: null, // borrador del informe trimestral en curso (para la vista previa)
+  reportDraftFile: null, // archivo adjunto guardado en el borrador
   editingStudentId: null, // alumno en edición en la pantalla Usuarios (null = crear nuevo)
   unsubChat: null,
   unsubNotif: null,
@@ -65,7 +67,7 @@ const NAV_ICONS = {
 // Título de la barra superior por pantalla.
 const TITLES = {
   home: 'Inicio', attendance: 'Asistencia', evaluate: 'Informe diario',
-  progress: 'Progreso', reports: 'Informes', reportDetail: 'Informe',
+  progress: 'Progreso', reports: 'Informes trimestrales', reportDetail: 'Informe',
   reportCompose: 'Nuevo informe', chatList: 'Chat', chatView: 'Chat',
   auths: 'Autorizaciones', authDetail: 'Autorización', authCompose: 'Nueva autorización',
   noticeCompose: 'Nuevo aviso', calendar: 'Calendario', notifications: 'Notificaciones',
@@ -270,7 +272,15 @@ document.addEventListener('click', (e) => {
   const fn = ACTIONS[el.dataset.action];
   if (fn) fn(el.dataset, el, e);
 });
-ACTIONS.go = (d) => show(d.screen);
+ACTIONS.go = (d) => {
+  // Al salir de Informes (que no sea a la vista previa ni volver a ella),
+  // se descarta el borrador del informe en curso.
+  if (d.screen !== 'reports' && d.screen !== 'reportDetail') {
+    state.reportDraft = null;
+    state.reportDraftFile = null;
+  }
+  show(d.screen);
+};
 
 /* ---------------- Router de pantallas ---------------- */
 // El login es un overlay aparte (loginOverlay); aquí solo pantallas de la app.
@@ -303,20 +313,20 @@ function renderNav() {
   if (isMonitor()) {
     items = [
       { id: 'home', label: 'Inicio', icon: 'home' },
-      { id: 'reports', label: 'Informes', icon: 'reports' },
-      { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Pasar lista', icon: 'attendance' },
-      { id: 'chatList', label: 'Chat', icon: 'chat' },
-      { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
       { id: 'evaluate', label: 'Informe diario', icon: 'evaluate' },
+      { id: 'chatList', label: 'Chat', icon: 'chat' },
+      { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'calendar', label: 'Calendario', icon: 'calendar' },
+      { id: 'reports', label: 'Informes trimestrales', icon: 'reports' },
+      { id: 'auths', label: 'Autorizaciones', icon: 'auths' },
       { id: 'users', label: 'Usuarios', icon: 'users' },
     ];
   } else {
     items = [
       { id: 'home', label: 'Inicio', icon: 'home' },
       { id: 'child', label: 'Mi hijo', icon: 'child' },
-      { id: 'reports', label: 'Informes', icon: 'reports' },
+      { id: 'reports', label: 'Informes trimestrales', icon: 'reports' },
       { id: 'notices', label: 'Avisos', icon: 'notices' },
       { id: 'attendance', label: 'Asistencia', icon: 'attendance' },
       { id: 'chatList', label: 'Chat', icon: 'chat' },
@@ -1432,6 +1442,13 @@ Object.assign(RENDER, {
 async function renderReports() {
   const c = $('reports-content');
   if (isMonitor()) {
+    // Borrador del informe en curso: al volver desde la vista previa se
+    // restauran los campos; el texto se consume al usarlo, pero el archivo
+    // se conserva hasta publicar o salir de Informes (no se puede rellenar
+    // un input de archivo por código, así que se guarda el objeto File).
+    const draft = state.reportDraft || {};
+    const draftFile = state.reportDraftFile || null;
+    state.reportDraft = null;
     // Estado del mes: cuenta trimestrales creados este mes.
     const msnap = await getDocs(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
     const ym = todayStr().slice(0, 7);
@@ -1451,7 +1468,7 @@ async function renderReports() {
     const lastR = last ? last.data() : null;
     const lastStudent = lastR ? state.students.find(s => s.id === lastR.studentId) : null;
     c.innerHTML = `
-      <div class="screen-head"><h2>Informes</h2></div>
+      <div class="screen-head"><h2>Informes trimestrales</h2></div>
       <div class="grid">
         <div class="col-7"><div class="card">
           <div class="section-head"><div>
@@ -1461,17 +1478,17 @@ async function renderReports() {
           <div class="report-form">
             <label for="rp-student">Alumno</label>
             <select id="rp-student">${state.students.map(s =>
-              `<option value="${s.id}">${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
+              `<option value="${s.id}"${s.id === draft.studentId ? ' selected' : ''}>${esc(s.firstName)} ${esc(s.lastName || '')}</option>`).join('')}</select>
             <label for="rp-month">Trimestre (mes de referencia)</label>
-            <input type="month" id="rp-month" value="${todayStr().slice(0, 7)}">
+            <input type="month" id="rp-month" value="${esc(draft.month || todayStr().slice(0, 7))}">
             <label for="rp-title">Resumen</label>
-            <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde">
+            <input type="text" id="rp-title" maxlength="120" placeholder="Ej.: Buen aprovechamiento de la tarde" value="${esc(draft.title || '')}">
             <label>Valoración para la familia</label>
-            ${richEditorHTML('rp-body', '')}
+            ${richEditorHTML('rp-body', draft.body || '')}
             <div id="rp-attach-wrap">
               <label for="rp-attach">Documento adjunto (Word o PDF)</label>
               <input type="file" id="rp-attach" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-              <p class="meta">Opcional. Máx. 10 MB.</p>
+              <p class="meta">Opcional. Máx. 10 MB.${draftFile ? ` Documento guardado: ${esc(draftFile.name)} (se enviará al publicar).` : ''}</p>
             </div>
             <div class="row" style="margin-top:12px;gap:8px">
               <button class="btn secondary" data-action="preview-report" style="flex:1">Previsualizar</button>
@@ -1503,13 +1520,13 @@ async function renderReports() {
     bindRichEditor($('reports-content'));
   } else {
     if (!state.children.length) {
-      c.innerHTML = `<h2>Informes</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
+      c.innerHTML = `<h2>Informes trimestrales</h2>` + emptyBox('📄', 'Aún no hay alumnos vinculados a tu familia.');
       return;
     }
     const child = state.children.find(x => x.id === state.selectedChildId) || state.children[0];
     c.innerHTML = `
       <div class="screen-head"><div>
-        <h2>Informes de ${esc(child.firstName)}</h2>
+        <h2>Informes trimestrales de ${esc(child.firstName)}</h2>
         <p class="muted">Consulta los informes trimestrales enviados por el profesor.</p>
       </div></div>
       ${state.children.length > 1 ? childSelectHTML('rep-child') : ''}
@@ -1599,7 +1616,7 @@ ACTIONS['toggle-report'] = async (d) => {
 function showReportDetail(r) {
   const dateStr = r._preview ? 'Ahora mismo' : tsToDate(r.createdAt);
   $('report-detail-content').innerHTML = `
-    <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
+    <button class="back" data-action="go" data-screen="reports">‹ Informes trimestrales</button>
     ${r._preview ? '<div><span class="badge info">Vista previa · aún no publicado</span></div>' : ''}
     <h2 style="margin-top:10px">${esc(r.title)}</h2>
     <div class="meta">${r.month ? fmtMonth(r.month) + ' · ' : ''}${dateStr}</div>
@@ -1615,11 +1632,20 @@ ACTIONS['open-report'] = async (d) => {
 ACTIONS['preview-report'] = () => {
   const studentId = $('rp-student').value;
   const s = state.students.find(x => x.id === studentId);
-  showReportDetail({
-    title: $('rp-title').value.trim() || '(Sin título)',
-    body: richEditorValue('rp-body') || '(Sin texto)',
-    type: 'trimestral',
+  // Guarda el borrador para restaurarlo al volver de la vista previa.
+  state.reportDraft = {
+    studentId,
     month: $('rp-month').value || null,
+    title: $('rp-title').value.trim(),
+    body: richEditorValue('rp-body'),
+  };
+  const fileInput = $('rp-attach');
+  if (fileInput && fileInput.files.length) state.reportDraftFile = fileInput.files[0];
+  showReportDetail({
+    title: state.reportDraft.title || '(Sin título)',
+    body: state.reportDraft.body || '(Sin texto)',
+    type: 'trimestral',
+    month: state.reportDraft.month,
     studentName: s ? `${s.firstName} ${s.lastName || ''}`.trim() : '',
     _preview: true,
   });
@@ -1630,11 +1656,11 @@ ACTIONS['publish-report2'] = async () => {
   const body = richEditorValue('rp-body');
   if (!studentId) { toast('Da de alta al menos un alumno primero.'); return; }
   if (!title || !richEditorText('rp-body')) { toast('Escribe un título y el texto del informe.'); return; }
-  // Sube el adjunto si lo hay.
+  // Sube el adjunto si lo hay (el del input o el guardado en el borrador).
   let attachmentUrl = null, attachmentName = null;
   const fileInput = $('rp-attach');
-  if (fileInput && fileInput.files.length) {
-    const file = fileInput.files[0];
+  const file = (fileInput && fileInput.files.length ? fileInput.files[0] : null) || state.reportDraftFile || null;
+  if (file) {
     if (file.size > 10 * 1024 * 1024) { toast('El archivo supera los 10 MB.'); return; }
     try {
       toast('Subiendo documento…');
@@ -1656,13 +1682,15 @@ ACTIONS['publish-report2'] = async () => {
     attachmentUrl, attachmentName,
     createdByUid: state.user.uid, createdAt: serverTimestamp(),
   });
+  state.reportDraft = null;
+  state.reportDraftFile = null;
   toast('Informe publicado. La familia recibirá un aviso.');
   show('reports');
 };
 
 async function renderReportCompose() {
   $('report-compose-content').innerHTML = `
-    <button class="back" data-action="go" data-screen="reports">‹ Informes</button>
+    <button class="back" data-action="go" data-screen="reports">‹ Informes trimestrales</button>
     <h2>Nuevo informe</h2>
     <label for="rc-student">Alumno/a</label>
     <select id="rc-student">${state.students.map(s =>
