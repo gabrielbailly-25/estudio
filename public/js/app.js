@@ -1281,12 +1281,14 @@ async function loadProgress() {
     const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
     svg += `<path d="${path}" class="chart-line" stroke="${colorOf(asp)}" fill="none"/>`;
   }
-  // Puntos clicables.
+  // Puntos clicables: punto visible más grueso + zona de toque invisible
+  // más amplia para que sea fácil pulsarlos en móvil.
   chartData.forEach((d, i) => {
     for (const asp of aspects) {
       const v = d.scores[asp];
       if (v == null) continue;
-      svg += `<circle cx="${x(i)}" cy="${y(v)}" r="5" fill="${colorOf(asp)}" class="chart-dot" data-action="prog-point" data-idx="${i}"/>`;
+      svg += `<circle cx="${x(i)}" cy="${y(v)}" r="18" fill="transparent" class="chart-hit" data-action="prog-point" data-idx="${i}"/>`;
+      svg += `<circle cx="${x(i)}" cy="${y(v)}" r="8" fill="${colorOf(asp)}" class="chart-dot" data-action="prog-point" data-idx="${i}"/>`;
     }
     const [yy, mm, dd] = d.date.split('-');
     svg += `<text x="${x(i)}" y="${H - 10}" class="chart-axis" text-anchor="middle">${parseInt(dd, 10)}</text>`;
@@ -1306,6 +1308,7 @@ async function loadProgress() {
       <div class="chart-legend">
         ${aspects.map(a => `<span><i style="background:${colorOf(a)}"></i>${esc(a)}</span>`).join('')}
       </div>
+      <p class="meta chart-help">Cómo leerla: el eje vertical es la puntuación (1 Necesita mejorar · 2 Adecuado · 3 Muy bien) y el horizontal los días del mes. Cada color es un aspecto. Pulsa un punto para ver la valoración de ese día.</p>
     </div>
     <div id="prog-detail"></div>
     <hr class="divider"><h3>Historial</h3>
