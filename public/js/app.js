@@ -34,6 +34,7 @@ const state = {
   editingAuthId: null, // autorización en edición (null = crear nueva)
   reportDraft: null, // borrador del informe trimestral en curso (para la vista previa)
   reportDraftFile: null, // archivo adjunto guardado en el borrador
+  progAspectFilter: null, // aspecto filtrado en la gráfica de progreso (null = todos)
   editingStudentId: null, // alumno en edición en la pantalla Usuarios (null = crear nuevo)
   unsubChat: null,
   unsubNotif: null,
@@ -1259,6 +1260,9 @@ async function loadProgress() {
   }
   const COLORS = ['#1f6b47', '#ee8a3b', '#2f6fab', '#c2493d', '#8b5cf6', '#d4a017', '#0097a7', '#e91e63'];
   const colorOf = (label) => COLORS[aspects.indexOf(label) % COLORS.length];
+  // Si se ha pulsado un ítem de la leyenda, la gráfica muestra solo ese aspecto.
+  const filter = state.progAspectFilter || null;
+  const shownAspects = filter ? aspects.filter(a => a === filter) : aspects;
   // Datos para la gráfica: por día, puntuación por aspecto.
   const chartData = evals.map(e => ({
     date: e.date,
@@ -1274,8 +1278,8 @@ async function loadProgress() {
   for (let v = 0; v <= 3; v++) {
     svg += `<line x1="${PL}" y1="${y(v)}" x2="${W - PR}" y2="${y(v)}" class="chart-grid"/><text x="${PL - 6}" y="${y(v) + 4}" class="chart-axis" text-anchor="end">${v}</text>`;
   }
-  // Líneas por aspecto.
-  for (const asp of aspects) {
+  // Líneas por aspecto (solo el filtrado, si hay filtro).
+  for (const asp of shownAspects) {
     const pts = chartData.map((d, i) => [x(i), y(d.scores[asp] ?? null)]).filter(p => p[1] !== null);
     if (pts.length < 1) continue;
     const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
@@ -1284,7 +1288,7 @@ async function loadProgress() {
   // Puntos clicables: punto visible más grueso + zona de toque invisible
   // más amplia para que sea fácil pulsarlos en móvil.
   chartData.forEach((d, i) => {
-    for (const asp of aspects) {
+    for (const asp of shownAspects) {
       const v = d.scores[asp];
       if (v == null) continue;
       svg += `<circle cx="${x(i)}" cy="${y(v)}" r="18" fill="transparent" class="chart-hit" data-action="prog-point" data-idx="${i}"/>`;
@@ -1306,8 +1310,9 @@ async function loadProgress() {
     <p class="muted" style="margin:0 0 8px">Pulsa un punto para ver la valoración de ese día.</p>
     <div class="card chart-wrap">${svg}
       <div class="chart-legend">
-        ${aspects.map(a => `<span><i style="background:${colorOf(a)}"></i>${esc(a)}</span>`).join('')}
+        ${aspects.map(a => `<span class="chart-legend-item${filter === a ? ' active' : ''}${filter && filter !== a ? ' dim' : ''}" data-action="prog-legend" data-aspect="${esc(a)}"><i style="background:${colorOf(a)}"></i>${esc(a)}</span>`).join('')}
       </div>
+      ${filter ? `<p class="meta" style="margin-top:6px">Mostrando solo «${esc(filter)}». Pulsa el ítem de nuevo para ver todos.</p>` : ''}
       <p class="meta chart-help">Cómo leerla: el eje vertical es la puntuación (1 Necesita mejorar · 2 Adecuado · 3 Muy bien) y el horizontal los días del mes. Cada color es un aspecto. Pulsa un punto para ver la valoración de ese día.</p>
     </div>
     <div id="prog-detail"></div>
@@ -1321,6 +1326,12 @@ async function loadProgress() {
   // Guarda los datos para el detalle al pulsar un punto.
   state.progChartData = chartData;
 }
+
+ACTIONS['prog-legend'] = (d) => {
+  // Pulsa un ítem de la leyenda: muestra solo ese aspecto; pulsa de nuevo para ver todos.
+  state.progAspectFilter = state.progAspectFilter === d.aspect ? null : d.aspect;
+  loadProgress();
+};
 
 ACTIONS['prog-point'] = (d, el) => {
   const idx = Number(el.dataset.idx);
@@ -2217,6 +2228,17 @@ async function renderCalendar() {
   const monthSessions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
   const upcoming = upcomingSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   const datesWithSession = new Set(monthSessions.map(s => s.date));
+  // Título habitual del mes (el más frecuente): los días con una sesión de
+  // título distinto (p. ej. técnicas de estudio) se marcan con otro color.
+  const titleCounts = {};
+  for (const s of monthSessions) {
+    const t = (s.title || 'Estudio dirigido').trim();
+    titleCounts[t] = (titleCounts[t] || 0) + 1;
+  }
+  const habitualTitle = Object.entries(titleCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Estudio dirigido';
+  const specialDates = new Set(monthSessions
+    .filter(s => (s.title || 'Estudio dirigido').trim() !== habitualTitle)
+    .map(s => s.date));
   // Celdas del mes: desde el lunes de la primera semana.
   const firstWeekday = (new Date(cy, cm - 1, 1).getDay() + 6) % 7; // 0 = lunes
   const today = todayStr();
@@ -2270,11 +2292,16 @@ async function renderCalendar() {
         <div class="cal-grid">
           ${cells.map(cell => {
             const has = datesWithSession.has(cell.date);
+            const special = specialDates.has(cell.date);
             const isToday = cell.date === today;
-            return `<button class="cal-day ${cell.other ? 'other' : ''} ${isToday ? 'today' : ''} ${has ? 'session-day' : ''}" data-action="cal-day" data-date="${cell.date}">
+            return `<button class="cal-day ${cell.other ? 'other' : ''} ${isToday ? 'today' : ''} ${has ? (special ? 'session-special' : 'session-day') : ''}" data-action="cal-day" data-date="${cell.date}">
               <span>${cell.label}</span>
             </button>`;
           }).join('')}
+        </div>
+        <div class="cal-legend" style="justify-content:flex-start;margin-top:12px">
+          <span><i class="cal-chip session-day"></i>Sesión habitual</span>
+          <span><i class="cal-chip session-special"></i>Sesión diferente</span>
         </div>
       </div></div>
       <div class="col-5">
